@@ -407,6 +407,37 @@ def get_tool(slug: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Tool not found")
     return tool
 
+@app.get("/api/tools/{tool_id}/reviews", response_model=List[ReviewResponse])
+def get_tool_reviews(tool_id: int, db: Session = Depends(get_db)):
+    """Get reviews for a specific tool"""
+    reviews = db.query(Review).filter(Review.tool_id == tool_id).all()
+    return reviews
+
+@app.post("/api/tools/{tool_id}/reviews", response_model=ReviewResponse)
+def create_review(tool_id: int, review: ReviewCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create a review for a tool"""
+    # Check if tool exists
+    tool = db.query(Tool).filter(Tool.id == tool_id).first()
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    
+    # Check if user already reviewed this tool
+    existing_review = db.query(Review).filter(Review.tool_id == tool_id, Review.user_id == current_user.id).first()
+    if existing_review:
+        raise HTTPException(status_code=400, detail="You have already reviewed this tool")
+    
+    db_review = Review(
+        tool_id=tool_id,
+        user_id=current_user.id,
+        rating=review.rating,
+        content=review.content
+    )
+    db.add(db_review)
+    db.commit()
+    db.refresh(db_review)
+    
+    return db_review
+
 @app.post("/api/tools", response_model=ToolResponse)
 async def create_tool(tool: ToolCreate, db: Session = Depends(get_db)):
     slug = create_slug(tool.name)
