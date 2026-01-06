@@ -28,15 +28,15 @@ def check_core_features():
     if os.path.exists('frontend/src/App.tsx'):
         with open('frontend/src/App.tsx', 'r') as f:
             content = f.read()
-            if 'search' in content.lower():
+            if 'search' in content.lower() and 'Search tools' in content:
                 checks["Full-text search"] = True
                 print("   ✅ Full-text search implemented")
             else:
                 print("   ❌ Full-text search missing")
             
-            if 'filter' in content.lower() or 'category' in content.lower():
+            if 'category' in content.lower() and 'select' in content.lower():
                 checks["Multi-select filters"] = True
-                print("   ✅ Filters implemented")
+                print("   ✅ Multi-select filters implemented")
             else:
                 print("   ❌ Multi-select filters missing")
             
@@ -45,6 +45,18 @@ def check_core_features():
                 print("   ✅ GitHub stats display implemented")
             else:
                 print("   ❌ GitHub stats display missing")
+                
+            if 'sort' in content.lower() or 'order' in content.lower():
+                checks["Sort functionality"] = True
+                print("   ✅ Sort functionality implemented")
+            else:
+                print("   ❌ Sort functionality missing")
+                
+            if 'grid' in content.lower() and 'list' in content.lower():
+                checks["Responsive grid/list view"] = True
+                print("   ✅ Responsive grid/list view implemented")
+            else:
+                print("   ❌ Responsive grid/list view missing")
     
     results["Tool Discovery"] = checks
     

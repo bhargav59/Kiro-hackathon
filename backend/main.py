@@ -356,6 +356,44 @@ def generate_ai_summary(tool_name: str, description: str, category: str) -> str:
 def read_root():
     return {"message": "CloudEngineered API", "version": "1.0.0"}
 
+@app.post("/api/auth/github")
+def github_auth(github_data: dict, db: Session = Depends(get_db)):
+    """GitHub OAuth authentication"""
+    try:
+        github_id = str(github_data.get('id'))
+        email = github_data.get('email')
+        username = github_data.get('login')
+        avatar_url = github_data.get('avatar_url')
+        
+        if not github_id or not email:
+            raise HTTPException(status_code=400, detail="Invalid GitHub data")
+        
+        # Check if user exists
+        user = db.query(User).filter(User.github_id == github_id).first()
+        
+        if not user:
+            # Create new user
+            user = User(
+                email=email,
+                username=username,
+                github_id=github_id,
+                avatar_url=avatar_url
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            # Update existing user
+            user.avatar_url = avatar_url
+            db.commit()
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": user.id})
+        return {"access_token": access_token, "token_type": "bearer", "user": user}
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"GitHub authentication failed: {str(e)}")
+
 @app.post("/api/auth/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     # Check if user exists
@@ -507,14 +545,53 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
 
 @app.post("/api/ai/compare")
 async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
-    """Generate AI-powered tool comparison using Gemini"""
+    """Generate AI-powered tool comparison with detailed matrix"""
     tools = db.query(Tool).filter(Tool.id.in_(request.tool_ids)).all()
     
     if len(tools) < 2:
         raise HTTPException(status_code=400, detail="At least 2 tools required for comparison")
     
     comparison = await generate_ai_comparison(tools)
+    
+    # Add detailed comparison matrix
+    comparison["comparison_matrix"] = {
+        "features": {
+            "GitHub Stars": {tool.name: tool.github_stars for tool in tools},
+            "License": {tool.name: tool.license for tool in tools},
+            "Pricing": {tool.name: tool.pricing_model for tool in tools},
+            "Category": {tool.name: tool.category for tool in tools}
+        },
+        "side_by_side": [
+            {
+                "name": tool.name,
+                "stars": tool.github_stars,
+                "license": tool.license,
+                "pricing": tool.pricing_model,
+                "category": tool.category,
+                "description": tool.description[:200] + "..."
+            } for tool in tools
+        ]
+    }
+    
     return comparison
+
+@app.get("/api/tools/{tool_id}/recommendations")
+def get_tool_recommendations(tool_id: int, db: Session = Depends(get_db)):
+    """Get AI-powered tool recommendations"""
+    tool = db.query(Tool).filter(Tool.id == tool_id).first()
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    
+    # Get similar tools in same category
+    similar_tools = db.query(Tool).filter(
+        Tool.category == tool.category,
+        Tool.id != tool_id
+    ).limit(3).all()
+    
+    return {
+        "similar_tools": [{"id": t.id, "name": t.name, "stars": t.github_stars} for t in similar_tools],
+        "message": f"Tools similar to {tool.name} in the {tool.category} category"
+    }
 
 # User Stack endpoints
 @app.get("/api/users/me/stack", response_model=List[UserStackResponse])
@@ -621,6 +698,67 @@ async def enhance_tool_details(tool_id: int, db: Session = Depends(get_db)):
     db.refresh(tool)
     
     return tool
+
+# Review voting endpoints
+@app.post("/api/reviews/{review_id}/vote")
+def vote_review(review_id: int, vote_data: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Vote on review helpfulness"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    is_helpful = vote_data.get("is_helpful", True)
+    
+    # Check existing vote
+    existing_vote = db.query(ReviewVote).filter(
+        ReviewVote.review_id == review_id, 
+        ReviewVote.user_id == current_user.id
+    ).first()
+    
+    if existing_vote:
+        # Update existing vote
+        if existing_vote.is_helpful != is_helpful:
+            existing_vote.is_helpful = is_helpful
+            # Update helpful count
+            if is_helpful:
+                review.helpful_count += 2  # +1 for new helpful, +1 for removing unhelpful
+            else:
+                review.helpful_count -= 2  # -1 for removing helpful, -1 for new unhelpful
+    else:
+        # Create new vote
+        vote = ReviewVote(review_id=review_id, user_id=current_user.id, is_helpful=is_helpful)
+        db.add(vote)
+        if is_helpful:
+            review.helpful_count += 1
+        else:
+            review.helpful_count -= 1
+    
+    db.commit()
+    return {"message": "Vote recorded", "helpful_count": review.helpful_count}
+
+@app.get("/api/reviews/{review_id}/votes")
+def get_review_votes(review_id: int, db: Session = Depends(get_db)):
+    """Get vote statistics for a review"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    helpful_votes = db.query(ReviewVote).filter(
+        ReviewVote.review_id == review_id,
+        ReviewVote.is_helpful == True
+    ).count()
+    
+    unhelpful_votes = db.query(ReviewVote).filter(
+        ReviewVote.review_id == review_id,
+        ReviewVote.is_helpful == False
+    ).count()
+    
+    return {
+        "helpful_votes": helpful_votes,
+        "unhelpful_votes": unhelpful_votes,
+        "total_votes": helpful_votes + unhelpful_votes,
+        "helpful_percentage": (helpful_votes / (helpful_votes + unhelpful_votes) * 100) if (helpful_votes + unhelpful_votes) > 0 else 0
+    }
 
 @app.get("/api/stats")
 def get_platform_stats(db: Session = Depends(get_db)):
