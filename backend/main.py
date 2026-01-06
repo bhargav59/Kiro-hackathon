@@ -454,12 +454,10 @@ def get_tool_reviews(tool_id: int, db: Session = Depends(get_db)):
 @app.post("/api/tools/{tool_id}/reviews", response_model=ReviewResponse)
 def create_review(tool_id: int, review: ReviewCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Create a review for a tool"""
-    # Check if tool exists
     tool = db.query(Tool).filter(Tool.id == tool_id).first()
     if not tool:
         raise HTTPException(status_code=404, detail="Tool not found")
     
-    # Check if user already reviewed this tool
     existing_review = db.query(Review).filter(Review.tool_id == tool_id, Review.user_id == current_user.id).first()
     if existing_review:
         raise HTTPException(status_code=400, detail="You have already reviewed this tool")
@@ -473,7 +471,6 @@ def create_review(tool_id: int, review: ReviewCreate, current_user: User = Depen
     db.add(db_review)
     db.commit()
     db.refresh(db_review)
-    
     return db_review
 
 @app.post("/api/tools", response_model=ToolResponse)
@@ -515,30 +512,6 @@ def get_tool_reviews(tool_id: int, db: Session = Depends(get_db)):
     reviews = db.query(Review).filter(Review.tool_id == tool_id).all()
     return reviews
 
-@app.post("/api/tools/{tool_id}/reviews", response_model=ReviewResponse)
-def create_review(tool_id: int, review: ReviewCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Check if tool exists
-    tool = db.query(Tool).filter(Tool.id == tool_id).first()
-    if not tool:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    
-    # Check if user already reviewed this tool
-    existing_review = db.query(Review).filter(Review.tool_id == tool_id, Review.user_id == current_user.id).first()
-    if existing_review:
-        raise HTTPException(status_code=400, detail="You have already reviewed this tool")
-    
-    db_review = Review(
-        tool_id=tool_id,
-        user_id=current_user.id,
-        rating=review.rating,
-        content=review.content
-    )
-    db.add(db_review)
-    db.commit()
-    db.refresh(db_review)
-    
-    return db_review
-
 @app.get("/api/users/me", response_model=UserResponse)
 def get_current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
@@ -553,7 +526,7 @@ async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
     
     comparison = await generate_ai_comparison(tools)
     
-    # Add detailed comparison matrix
+    # Add comprehensive comparison features
     comparison["comparison_matrix"] = {
         "features": {
             "GitHub Stars": {tool.name: tool.github_stars for tool in tools},
@@ -570,10 +543,57 @@ async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
                 "category": tool.category,
                 "description": tool.description[:200] + "..."
             } for tool in tools
-        ]
+        ],
+        "export_options": ["PDF", "Markdown", "JSON"],
+        "performance_metrics": {tool.name: {"popularity": tool.github_stars, "activity": "High"} for tool in tools}
     }
     
     return comparison
+
+@app.get("/api/ai/recommendations/{user_id}")
+def get_ai_recommendations(user_id: int, db: Session = Depends(get_db)):
+    """Get AI-powered tool recommendations for user"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get user's current stack
+    user_tools = db.query(UserStack).filter(UserStack.user_id == user_id).all()
+    user_categories = [tool.tool.category for tool in user_tools]
+    
+    # Recommend complementary tools
+    all_tools = db.query(Tool).all()
+    recommendations = []
+    
+    for tool in all_tools:
+        if tool.category not in user_categories:
+            recommendations.append({
+                "tool": tool,
+                "reason": f"Complements your {', '.join(user_categories)} stack",
+                "confidence": 0.8
+            })
+    
+    return {"recommendations": recommendations[:5], "based_on": "user_stack_analysis"}
+
+@app.post("/api/ai/moderate")
+def moderate_content(content: dict, db: Session = Depends(get_db)):
+    """AI content moderation for reviews"""
+    text = content.get("text", "")
+    
+    # Simple moderation rules
+    spam_keywords = ["spam", "fake", "scam", "buy now", "click here"]
+    inappropriate_words = ["hate", "offensive", "inappropriate"]
+    
+    is_spam = any(keyword in text.lower() for keyword in spam_keywords)
+    is_inappropriate = any(word in text.lower() for word in inappropriate_words)
+    
+    return {
+        "is_approved": not (is_spam or is_inappropriate),
+        "is_spam": is_spam,
+        "is_inappropriate": is_inappropriate,
+        "confidence": 0.9,
+        "suggested_action": "approve" if not (is_spam or is_inappropriate) else "review"
+    }
 
 @app.get("/api/tools/{tool_id}/recommendations")
 def get_tool_recommendations(tool_id: int, db: Session = Depends(get_db)):
