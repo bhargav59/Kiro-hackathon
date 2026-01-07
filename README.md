@@ -27,12 +27,32 @@ The IMDb for Cloud Tools - A comprehensive platform for discovering, reviewing, 
 - **Vite** - Fast build tool
 - **React Router** - Client-side routing
 
-## 🏃‍♂️ Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.11+
 - Node.js 16+
 - npm or yarn
+- **Google Gemini API Key** (free) - Get from https://makersuite.google.com/app/apikey
+
+### Setup AI Comparisons (Recommended)
+
+The platform uses Google Gemini AI to compare ANY DevOps tools in real-time:
+
+1. Get a free API key from https://makersuite.google.com/app/apikey
+2. Set the environment variable:
+```bash
+export GEMINI_API_KEY='your-api-key-here'
+```
+
+Or create a `.env` file in the `backend` directory:
+```
+GEMINI_API_KEY=your-api-key-here
+```
+
+**Without an API key**: The system uses a fallback knowledge base with limited tools (Docker, Kubernetes, Jenkins, GitHub Actions, Terraform, OpenTofu, Podman).
+
+**With an API key**: Compare ANY tools in real-time with quantitative data!
 
 ### Backend Setup
 

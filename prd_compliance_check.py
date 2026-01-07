@@ -230,15 +230,15 @@ def check_api_endpoints():
     
     # Required endpoints from PRD
     required_endpoints = {
-        "GET /api/tools": "/api/tools",
-        "GET /api/tools/{slug}": "/api/tools/{",
-        "POST /api/tools": "POST.*api/tools",
-        "GET /api/tools/{id}/reviews": "/reviews",
-        "POST /api/tools/{id}/reviews": "POST.*reviews",
-        "POST /api/auth/register": "/auth/register",
-        "POST /api/auth/login": "/auth/login",
-        "GET /api/users/me": "/users/me",
-        "POST /api/ai/compare": "/ai/compare"
+        "GET /api/tools": "@app.get(\"/api/tools\"",
+        "GET /api/tools/{slug}": "@app.get(\"/api/tools/{slug}\"",
+        "POST /api/tools": "@app.post(\"/api/tools\"",
+        "GET /api/tools/{id}/reviews": "get_tool_reviews",
+        "POST /api/tools/{id}/reviews": "create_review",
+        "POST /api/auth/register": "@app.post(\"/api/auth/register\"",
+        "POST /api/auth/login": "@app.post(\"/api/auth/login\"",
+        "GET /api/users/me": "@app.get(\"/api/users/me\"",
+        "POST /api/ai/compare": "@app.post(\"/api/ai/compare\""
     }
     
     endpoint_checks = {}

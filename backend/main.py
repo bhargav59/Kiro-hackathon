@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from pydantic import BaseModel, EmailStr
@@ -16,6 +16,7 @@ from contextlib import contextmanager
 import asyncio
 import aiohttp
 import google.generativeai as genai
+from tool_knowledge import TOOL_KNOWLEDGE, get_tool_data, calculate_roi
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cloudengineered.db")
@@ -261,7 +262,7 @@ async def generate_ai_comparison(tools: List[Tool]) -> dict:
         return generate_mock_comparison(tools)
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('models/gemini-3-flash-preview')
         
         # Create comparison prompt
         tool_info = []
@@ -519,24 +520,25 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
 @app.post("/api/ai/compare")
 async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
     """Generate AI-powered tool comparison with detailed matrix"""
-    tools = db.query(Tool).filter(Tool.id.in_(request.tool_ids)).all()
-    
-    if len(tools) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 tools required for comparison")
-    
-    comparison = await generate_ai_comparison(tools)
-    
-    # Add comprehensive comparison features
-    comparison["comparison_matrix"] = {
-        "features": {
-            "GitHub Stars": {tool.name: tool.github_stars for tool in tools},
-            "License": {tool.name: tool.license for tool in tools},
-            "Pricing": {tool.name: tool.pricing_model for tool in tools},
-            "Category": {tool.name: tool.category for tool in tools}
-        },
-        "side_by_side": [
-            {
-                "name": tool.name,
+    try:
+        tools = db.query(Tool).filter(Tool.id.in_(request.tool_ids)).all()
+        
+        if len(tools) < 2:
+            raise HTTPException(status_code=400, detail="At least 2 tools required for comparison")
+        
+        comparison = await generate_ai_comparison(tools)
+        
+        # Add comprehensive comparison features
+        comparison["comparison_matrix"] = {
+            "features": {
+                "GitHub Stars": {tool.name: tool.github_stars for tool in tools},
+                "License": {tool.name: tool.license for tool in tools},
+                "Pricing": {tool.name: tool.pricing_model for tool in tools},
+                "Category": {tool.name: tool.category for tool in tools}
+            },
+            "side_by_side": [
+                {
+                    "name": tool.name,
                 "stars": tool.github_stars,
                 "license": tool.license,
                 "pricing": tool.pricing_model,
@@ -548,7 +550,11 @@ async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
         "performance_metrics": {tool.name: {"popularity": tool.github_stars, "activity": "High"} for tool in tools}
     }
     
-    return comparison
+        return comparison
+
+    except Exception as e:
+        print(f"Error in compare_tools: {e}")
+        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
 
 @app.get("/api/ai/recommendations/{user_id}")
 def get_ai_recommendations(user_id: int, db: Session = Depends(get_db)):
@@ -780,6 +786,241 @@ def get_review_votes(review_id: int, db: Session = Depends(get_db)):
         "helpful_percentage": (helpful_votes / (helpful_votes + unhelpful_votes) * 100) if (helpful_votes + unhelpful_votes) > 0 else 0
     }
 
+@app.get("/api/stats/advanced")
+def get_advanced_analytics(db: Session = Depends(get_db)):
+    """Advanced analytics dashboard with trends and insights"""
+    # Basic stats
+    total_tools = db.query(Tool).count()
+    total_users = db.query(User).count()
+    total_reviews = db.query(Review).count()
+    
+    # Category breakdown with percentages
+    categories = db.query(Tool.category, db.func.count(Tool.id)).group_by(Tool.category).all()
+    category_stats = {category: {"count": count, "percentage": round(count/total_tools*100, 1)} for category, count in categories}
+    
+    # Top tools by stars
+    top_tools = db.query(Tool).order_by(Tool.github_stars.desc()).limit(5).all()
+    
+    # Review statistics
+    avg_rating = db.query(db.func.avg(Review.rating)).scalar() or 0
+    review_distribution = db.query(Review.rating, db.func.count(Review.id)).group_by(Review.rating).all()
+    
+    # User engagement metrics
+    active_reviewers = db.query(db.func.count(db.func.distinct(Review.user_id))).scalar() or 0
+    avg_reviews_per_tool = total_reviews / total_tools if total_tools > 0 else 0
+    
+    # Growth trends (mock data for demo)
+    growth_trends = {
+        "tools_added_last_30_days": 6,
+        "users_joined_last_30_days": 25,
+        "reviews_last_30_days": 15,
+        "monthly_growth_rate": 12.5
+    }
+    
+    return {
+        "overview": {
+            "total_tools": total_tools,
+            "total_users": total_users,
+            "total_reviews": total_reviews,
+            "average_rating": round(avg_rating, 2),
+            "active_reviewers": active_reviewers,
+            "avg_reviews_per_tool": round(avg_reviews_per_tool, 2)
+        },
+        "categories": category_stats,
+        "top_tools": [{"name": t.name, "stars": t.github_stars, "category": t.category} for t in top_tools],
+        "review_distribution": {str(rating): count for rating, count in review_distribution},
+        "growth_trends": growth_trends,
+        "insights": [
+            f"Most popular category: {max(category_stats.items(), key=lambda x: x[1]['count'])[0]}",
+            f"Average tool rating: {round(avg_rating, 1)}/5.0",
+            f"User engagement: {round(active_reviewers/total_users*100, 1)}% of users have written reviews" if total_users > 0 else "New platform - building user base"
+        ]
+    }
+
+@app.post("/api/ai/natural-query")
+async def natural_language_query(query_data: dict, db: Session = Depends(get_db)):
+    """Natural language query interface for tool discovery"""
+    query = query_data.get("query", "").lower()
+    
+    # Simple NLP-like processing for demo
+    tools = db.query(Tool).all()
+    results = []
+    
+    # Keyword matching with scoring
+    keywords = {
+        "monitoring": ["monitoring", "observability", "metrics", "alerting"],
+        "container": ["container", "docker", "kubernetes", "orchestration"],
+        "ci/cd": ["ci", "cd", "pipeline", "deployment", "build"],
+        "infrastructure": ["infrastructure", "terraform", "cloud", "provisioning"]
+    }
+    
+    # Score tools based on query relevance
+    for tool in tools:
+        score = 0
+        tool_text = f"{tool.name} {tool.description} {tool.category}".lower()
+        
+        # Direct keyword matches
+        for word in query.split():
+            if word in tool_text:
+                score += 2
+        
+        # Category keyword matches
+        for category, category_keywords in keywords.items():
+            if any(keyword in query for keyword in category_keywords):
+                if tool.category.lower() == category:
+                    score += 3
+                elif any(keyword in tool_text for keyword in category_keywords):
+                    score += 1
+        
+        if score > 0:
+            results.append({
+                "tool": {
+                    "id": tool.id,
+                    "name": tool.name,
+                    "description": tool.description[:200] + "...",
+                    "category": tool.category,
+                    "stars": tool.github_stars
+                },
+                "relevance_score": score,
+                "match_reason": f"Matches your query about {tool.category.lower()} tools"
+            })
+    
+    # Sort by relevance score
+    results.sort(key=lambda x: x["relevance_score"], reverse=True)
+    
+    return {
+        "query": query_data.get("query"),
+        "results": results[:10],  # Top 10 results
+        "total_matches": len(results),
+        "suggestions": [
+            "Try: 'monitoring tools for Kubernetes'",
+            "Try: 'CI/CD pipeline tools'",
+            "Try: 'container orchestration platforms'"
+        ]
+    }
+
+@app.post("/api/tools/compatibility-check")
+def check_tool_compatibility(compatibility_data: dict, db: Session = Depends(get_db)):
+    """Check compatibility between tools"""
+    tool_ids = compatibility_data.get("tool_ids", [])
+    
+    if len(tool_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 tools required for compatibility check")
+    
+    tools = db.query(Tool).filter(Tool.id.in_(tool_ids)).all()
+    
+    # Compatibility matrix (simplified for demo)
+    compatibility_rules = {
+        ("Container", "Container"): {"compatible": True, "reason": "Container tools often work together in orchestration"},
+        ("Container", "Monitoring"): {"compatible": True, "reason": "Monitoring is essential for containerized applications"},
+        ("CI/CD", "Container"): {"compatible": True, "reason": "CI/CD pipelines commonly deploy to containers"},
+        ("Infrastructure", "Container"): {"compatible": True, "reason": "Infrastructure tools provision container platforms"},
+        ("Monitoring", "Infrastructure"): {"compatible": True, "reason": "Infrastructure monitoring is a common use case"}
+    }
+    
+    results = []
+    for i, tool1 in enumerate(tools):
+        for tool2 in tools[i+1:]:
+            key1 = (tool1.category, tool2.category)
+            key2 = (tool2.category, tool1.category)
+            
+            compatibility = compatibility_rules.get(key1) or compatibility_rules.get(key2) or {
+                "compatible": "unknown",
+                "reason": "Compatibility depends on specific use case and implementation"
+            }
+            
+            results.append({
+                "tool1": {"name": tool1.name, "category": tool1.category},
+                "tool2": {"name": tool2.name, "category": tool2.category},
+                "compatibility": compatibility["compatible"],
+                "reason": compatibility["reason"],
+                "integration_tips": f"Consider using {tool1.name} and {tool2.name} together for {tool1.category.lower()}-{tool2.category.lower()} workflows"
+            })
+    
+    return {
+        "compatibility_matrix": results,
+        "overall_compatibility": "high" if all(r["compatibility"] == True for r in results) else "moderate",
+        "recommendations": [
+            "These tools can work together effectively",
+            "Consider integration patterns and data flow",
+            "Check official documentation for specific integration guides"
+        ]
+    }
+
+@app.get("/api/users/{user_id}/badges")
+def get_user_badges(user_id: int, db: Session = Depends(get_db)):
+    """Get user badges and reputation system"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Calculate user stats
+    user_reviews = db.query(Review).filter(Review.user_id == user_id).all()
+    total_reviews = len(user_reviews)
+    avg_rating_given = sum(r.rating for r in user_reviews) / total_reviews if total_reviews > 0 else 0
+    helpful_votes_received = sum(r.helpful_count for r in user_reviews)
+    
+    # Badge system
+    badges = []
+    reputation_score = 0
+    
+    # Review badges
+    if total_reviews >= 1:
+        badges.append({"name": "First Reviewer", "description": "Wrote your first review", "icon": "⭐"})
+        reputation_score += 10
+    if total_reviews >= 5:
+        badges.append({"name": "Active Reviewer", "description": "Wrote 5+ reviews", "icon": "📝"})
+        reputation_score += 25
+    if total_reviews >= 10:
+        badges.append({"name": "Review Expert", "description": "Wrote 10+ reviews", "icon": "🏆"})
+        reputation_score += 50
+    
+    # Helpfulness badges
+    if helpful_votes_received >= 10:
+        badges.append({"name": "Helpful Contributor", "description": "Received 10+ helpful votes", "icon": "👍"})
+        reputation_score += 30
+    if helpful_votes_received >= 25:
+        badges.append({"name": "Community Hero", "description": "Received 25+ helpful votes", "icon": "🦸"})
+        reputation_score += 75
+    
+    # Quality badges
+    if avg_rating_given >= 4.0 and total_reviews >= 3:
+        badges.append({"name": "Quality Advocate", "description": "Consistently rates quality tools highly", "icon": "💎"})
+        reputation_score += 20
+    
+    # Determine user level
+    if reputation_score >= 100:
+        level = "Expert"
+        level_icon = "🥇"
+    elif reputation_score >= 50:
+        level = "Advanced"
+        level_icon = "🥈"
+    elif reputation_score >= 20:
+        level = "Intermediate"
+        level_icon = "🥉"
+    else:
+        level = "Beginner"
+        level_icon = "🌱"
+    
+    return {
+        "user": {"username": user.username, "id": user.id},
+        "reputation_score": reputation_score,
+        "level": level,
+        "level_icon": level_icon,
+        "badges": badges,
+        "stats": {
+            "total_reviews": total_reviews,
+            "avg_rating_given": round(avg_rating_given, 1),
+            "helpful_votes_received": helpful_votes_received,
+            "account_age_days": (datetime.utcnow() - user.created_at).days
+        },
+        "next_badge": {
+            "name": "Review Master",
+            "requirement": "Write 20 reviews",
+            "progress": f"{total_reviews}/20"
+        } if total_reviews < 20 else None
+    }
+
 @app.get("/api/stats")
 def get_platform_stats(db: Session = Depends(get_db)):
     """Get platform statistics"""
@@ -798,6 +1039,500 @@ def get_platform_stats(db: Session = Depends(get_db)):
         "categories": category_stats,
         "top_categories": sorted(category_stats.items(), key=lambda x: x[1], reverse=True)[:5]
     }
+
+@app.post("/api/ai/enhanced-compare")
+async def enhanced_compare_tools(request: dict):
+    """Real-time AI-powered tool comparison for any tools"""
+    try:
+        tool1 = request.get('tool1', '').strip()
+        tool2 = request.get('tool2', '').strip()
+        
+        if not tool1 or not tool2:
+            raise HTTPException(status_code=400, detail="Both tool names are required")
+        
+        # Try AI first, fallback to knowledge base
+        try:
+            return await generate_enhanced_ai_comparison(tool1, tool2)
+        except Exception as ai_error:
+            print(f"AI comparison failed: {ai_error}, using knowledge base")
+            return generate_detailed_comparison(tool1, tool2)
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate comparison: {str(e)}")
+
+async def generate_enhanced_ai_comparison(tool1: str, tool2: str):
+    """Generate comparison using AI with structured prompt"""
+    
+    # Configure Gemini AI
+    api_key = os.getenv('GEMINI_API_KEY', '')
+    if not api_key or api_key == 'your-gemini-api-key':
+        raise Exception("AI API key not configured")
+    
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('models/gemini-3-flash-preview')
+    
+    prompt = f"""Compare {tool1} vs {tool2} as a DevOps consultant. Provide ONLY a JSON response with this exact structure (no markdown, no code blocks):
+
+{{
+  "tool1": "{tool1}",
+  "tool2": "{tool2}",
+  "detailed_analysis": {{
+    "overview": "2-3 sentence executive summary with market share percentages if known",
+    "technical_comparison": {{
+      "architecture": "Tool1: [architecture details]. Tool2: [architecture details]",
+      "performance": "Tool1: [specific metrics like startup time, throughput]. Tool2: [specific metrics]",
+      "scalability": "Tool1: [scaling capabilities with numbers]. Tool2: [scaling capabilities with numbers]",
+      "security": "Tool1: [compliance certs like SOC2, ISO]. Tool2: [compliance certs]"
+    }},
+    "business_analysis": {{
+      "cost_analysis": "Tool1: [pricing with $ amounts]. Tool2: [pricing with $ amounts]. ROI Analysis: [comparison]",
+      "learning_curve": "Tool1: [time to proficiency, resources]. Tool2: [time to proficiency, resources]",
+      "community_support": "Tool1: Market share X%, [integrations count]. Tool2: Market share Y%, [integrations count]",
+      "enterprise_readiness": "Tool1: [enterprise features]. Tool2: [enterprise features]"
+    }},
+    "use_case_scenarios": {{
+      "startup": "Startups (<50 employees): Recommend [tool] because [reason]. Migration: [effort]",
+      "enterprise": "Enterprise (500+ employees): Tool1 for [use case]. Tool2 for [use case]",
+      "specific_industries": "Regulated Industries: [tool] - [compliance]. Tech/Startups: [tool] - [reason]"
+    }},
+    "pros_cons": {{
+      "tool1_pros": ["Quantitative strength 1", "Quantitative strength 2", "Quantitative strength 3", "Quantitative strength 4", "Quantitative strength 5"],
+      "tool1_cons": ["Specific limitation 1", "Specific limitation 2", "Specific limitation 3", "Specific limitation 4"],
+      "tool2_pros": ["Quantitative strength 1", "Quantitative strength 2", "Quantitative strength 3", "Quantitative strength 4", "Quantitative strength 5"],
+      "tool2_cons": ["Specific limitation 1", "Specific limitation 2", "Specific limitation 3", "Specific limitation 4"]
+    }},
+    "decision_matrix": [
+      {{"criteria": "Ease of Use", "tool1_score": 7, "tool2_score": 8, "reasoning": "Brief reason"}},
+      {{"criteria": "Performance", "tool1_score": 8, "tool2_score": 7, "reasoning": "Brief reason"}},
+      {{"criteria": "Enterprise Features", "tool1_score": 7, "tool2_score": 9, "reasoning": "Brief reason"}},
+      {{"criteria": "Community Support", "tool1_score": 9, "tool2_score": 7, "reasoning": "Brief reason"}},
+      {{"criteria": "Cost Effectiveness", "tool1_score": 8, "tool2_score": 6, "reasoning": "Brief reason"}},
+      {{"criteria": "Security", "tool1_score": 8, "tool2_score": 9, "reasoning": "Brief reason"}},
+      {{"criteria": "Scalability", "tool1_score": 9, "tool2_score": 8, "reasoning": "Brief reason"}},
+      {{"criteria": "Integration Ecosystem", "tool1_score": 8, "tool2_score": 9, "reasoning": "Brief reason"}}
+    ],
+    "final_recommendation": "Overall Score: Tool1 (X/80) vs Tool2 (Y/80). Choose Tool1 if: [specific criteria]. Choose Tool2 if: [specific criteria]. Migration Path: [details]. Sources: [list sources]"
+  }},
+  "metadata": {{
+    "data_sources": ["Source 1", "Source 2", "Source 3"],
+    "last_updated": "2024-Q4",
+    "confidence_level": "High"
+  }}
+}}
+
+Use real data: GitHub stars, pricing, compliance certs (SOC2, ISO27001), market share %, performance metrics. Be specific with numbers."""
+
+    response = model.generate_content(prompt)
+    response_text = response.text.strip()
+    
+    # Clean response
+    if '```json' in response_text:
+        response_text = response_text.split('```json')[1].split('```')[0].strip()
+    elif '```' in response_text:
+        response_text = response_text.split('```')[1].split('```')[0].strip()
+    
+    return json.loads(response_text)
+
+def generate_detailed_comparison(tool1: str, tool2: str):
+    """Generate production-grade comparison with quantitative data"""
+    
+    t1_data = get_tool_data(tool1)
+    t2_data = get_tool_data(tool2)
+    roi = calculate_roi(t1_data['cost'], t2_data['cost'])
+    
+    # Calculate weighted scores based on quantitative metrics
+    def calculate_score(tool_data, criterion):
+        scores = {
+            "Ease of Use": 8 if "weeks" in tool_data['learning_curve'].lower() else 6,
+            "Performance": 9 if "faster" in tool_data['performance'].lower() or "low" in tool_data['performance'].lower() else 7,
+            "Enterprise Features": 9 if "SOC 2" in tool_data['compliance'] or "ISO" in tool_data['compliance'] else 6,
+            "Community Support": 9 if tool_data['market_share'] != "Market share data not available" and float(tool_data['market_share'].rstrip('%')) > 50 else 7,
+            "Cost Effectiveness": 9 if "free" in tool_data['cost'].lower() or "$0" in tool_data['cost'] else 6,
+            "Security": 9 if "SOC 2" in tool_data['compliance'] else 7,
+            "Scalability": 8 if "scale" in tool_data['benchmarks'].lower() else 7,
+            "Integration Ecosystem": 9 if "1000+" in tool_data['integrations'] or "200+" in tool_data['integrations'] else 7
+        }
+        return scores.get(criterion, 7)
+    
+    criteria_list = ["Ease of Use", "Performance", "Enterprise Features", "Community Support", "Cost Effectiveness", "Security", "Scalability", "Integration Ecosystem"]
+    
+    decision_matrix = []
+    for criterion in criteria_list:
+        t1_score = calculate_score(t1_data, criterion)
+        t2_score = calculate_score(t2_data, criterion)
+        winner = tool1 if t1_score > t2_score else tool2 if t2_score > t1_score else "Tie"
+        decision_matrix.append({
+            "criteria": criterion,
+            "tool1_score": t1_score,
+            "tool2_score": t2_score,
+            "reasoning": f"{winner} leads based on quantitative metrics"
+        })
+    
+    # Calculate overall winner
+    t1_total = sum(item['tool1_score'] for item in decision_matrix)
+    t2_total = sum(item['tool2_score'] for item in decision_matrix)
+    
+    return {
+        "tool1": tool1,
+        "tool2": tool2,
+        "detailed_analysis": {
+            "overview": f"{tool1} ({t1_data['category']}) vs {tool2} ({t2_data['category']}): {tool1} holds {t1_data.get('market_share', 'N/A')} market share while {tool2} has {t2_data.get('market_share', 'N/A')}. Both serve similar use cases but with different architectural approaches and cost structures.",
+            "technical_comparison": {
+                "architecture": f"**{tool1}**: {t1_data['architecture']}\n\n**{tool2}**: {t2_data['architecture']}",
+                "performance": f"**{tool1}**: {t1_data['performance']}\n\n**{tool2}**: {t2_data['performance']}",
+                "scalability": f"**{tool1}**: {t1_data['benchmarks']}\n\n**{tool2}**: {t2_data['benchmarks']}",
+                "security": f"**{tool1}**: {t1_data['compliance']}\n\n**{tool2}**: {t2_data['compliance']}"
+            },
+            "business_analysis": {
+                "cost_analysis": f"**{tool1}**: {t1_data['cost']}\n\n**{tool2}**: {t2_data['cost']}\n\n**ROI Analysis**: {roi['tool1_monthly']} vs {roi['tool2_monthly']}. {roi['annual_difference']}. {roi['note']}",
+                "learning_curve": f"**{tool1}**: {t1_data['learning_curve']}\n\n**{tool2}**: {t2_data['learning_curve']}",
+                "community_support": f"**{tool1}**: Market share {t1_data.get('market_share', 'N/A')}, {t1_data['integrations']}\n\n**{tool2}**: Market share {t2_data.get('market_share', 'N/A')}, {t2_data['integrations']}",
+                "enterprise_readiness": f"**{tool1}**: {t1_data['enterprise_features']}\n\n**{tool2}**: {t2_data['enterprise_features']}"
+            },
+            "use_case_scenarios": {
+                "startup": f"**Startups (<50 employees)**: Choose {tool2} if cost-sensitive. Choose {tool1} if you need proven stability. Migration effort: {t2_data['migration_effort']}",
+                "enterprise": f"**Enterprise (500+ employees)**: {tool1} recommended for: {', '.join(t1_data['strengths'][:2])}. {tool2} recommended for: {', '.join(t2_data['strengths'][:2])}.",
+                "specific_industries": f"**Regulated Industries**: {tool1} - {t1_data['compliance']}. **Tech/Startups**: {tool2} offers {t2_data['strengths'][0]}. **Migration**: {t1_data['migration_effort']} for {tool1}, {t2_data['migration_effort']} for {tool2}"
+            },
+            "pros_cons": {
+                "tool1_pros": t1_data['strengths'],
+                "tool1_cons": t1_data['weaknesses'],
+                "tool2_pros": t2_data['strengths'],
+                "tool2_cons": t2_data['weaknesses']
+            },
+            "decision_matrix": decision_matrix,
+            "final_recommendation": f"**Overall Score**: {tool1} ({t1_total}/80) vs {tool2} ({t2_total}/80)\n\n**Choose {tool1} if**: You need {t1_data['strengths'][0].lower()}, have budget for {t1_data['cost'].split('|')[0] if '|' in t1_data['cost'] else t1_data['cost'][:50]}, and require {t1_data['compliance'].split(',')[0] if ',' in t1_data['compliance'] else 'enterprise compliance'}.\n\n**Choose {tool2} if**: You prioritize {t2_data['strengths'][0].lower()}, want {t2_data['cost'].split('|')[0] if '|' in t2_data['cost'] else t2_data['cost'][:50]}, and can accept {t2_data['migration_effort'].lower()}.\n\n**Migration Path**: {t2_data['migration_effort']}. Estimated timeline: 2-8 weeks.\n\n**Sources**: {', '.join(t1_data.get('sources', ['Vendor documentation']))}"
+        },
+        "metadata": {
+            "data_sources": list(set(t1_data.get('sources', []) + t2_data.get('sources', []))),
+            "last_updated": "2024-Q4",
+            "confidence_level": "High" if t1_data.get('sources') and t2_data.get('sources') else "Medium"
+        }
+    }
+
+@app.post("/api/ai/search")
+async def ai_search_tools(request: dict, db: Session = Depends(get_db)):
+    """Enhanced AI-powered tool search using comprehensive data"""
+    query = request.get("query", "")
+    if not query:
+        raise HTTPException(status_code=400, detail="Query is required")
+    
+    try:
+        # Get all tools with comprehensive data
+        tools = db.query(Tool).all()
+        
+        # Create enhanced search context with all fetched data
+        tools_context = []
+        for tool in tools:
+            # Extract key information for AI search
+            context = {
+                "name": tool.name,
+                "category": tool.category,
+                "description": tool.description[:1000],  # Limit for AI context
+                "license": tool.license,
+                "pricing": tool.pricing_model,
+                "stars": tool.github_stars,
+                "forks": tool.github_forks,
+                "ai_summary": tool.ai_summary
+            }
+            
+            # Extract features from enhanced description
+            features = []
+            if "**Key Features:**" in tool.description:
+                features_section = tool.description.split("**Key Features:**")[1].split("**")[0]
+                features = [f.strip() for f in features_section.split("•") if f.strip()][:5]
+            
+            context["features"] = features
+            tools_context.append(context)
+        
+        # Use AI to analyze and recommend tools
+        if GEMINI_API_KEY and GEMINI_API_KEY != "your-gemini-api-key":
+            model = genai.GenerativeModel('models/gemini-3-flash-preview')
+            
+            prompt = f"""
+You are an expert DevOps consultant. A user is asking: "{query}"
+
+Based on this query, analyze the following tools and provide recommendations:
+
+{json.dumps(tools_context, indent=2)}
+
+Provide a JSON response with:
+{{
+    "recommended_tools": [
+        {{
+            "name": "Tool Name",
+            "relevance_score": 95,
+            "why_recommended": "Specific reason why this tool matches the query",
+            "use_case": "How to use this tool for the user's needs"
+        }}
+    ],
+    "search_summary": "Brief explanation of the search results",
+    "alternative_suggestions": ["suggestion 1", "suggestion 2"]
+}}
+
+Focus on practical recommendations. Return only valid JSON.
+"""
+            
+            response = model.generate_content(prompt)
+            
+            try:
+                # Parse AI response
+                response_text = response.text.strip()
+                if response_text.startswith('```json'):
+                    response_text = response_text[7:-3]
+                elif response_text.startswith('```'):
+                    response_text = response_text[3:-3]
+                
+                ai_results = json.loads(response_text)
+                
+                # Enhance results with actual tool data
+                enhanced_tools = []
+                for rec_tool in ai_results.get("recommended_tools", []):
+                    matching_tool = next((t for t in tools if t.name.lower() == rec_tool["name"].lower()), None)
+                    if matching_tool:
+                        enhanced_tool = {
+                            **rec_tool,
+                            "id": matching_tool.id,
+                            "slug": matching_tool.slug,
+                            "category": matching_tool.category,
+                            "github_stars": matching_tool.github_stars,
+                            "license": matching_tool.license,
+                            "pricing_model": matching_tool.pricing_model,
+                            "homepage_url": matching_tool.homepage_url
+                        }
+                        enhanced_tools.append(enhanced_tool)
+                
+                ai_results["recommended_tools"] = enhanced_tools
+                return ai_results
+                
+            except json.JSONDecodeError:
+                pass
+        
+        # Fallback: Enhanced keyword search
+        query_lower = query.lower()
+        scored_tools = []
+        
+        for tool in tools:
+            score = 0
+            reasons = []
+            
+            if query_lower in tool.name.lower():
+                score += 50
+                reasons.append("Name matches")
+            if query_lower in tool.category.lower():
+                score += 30
+                reasons.append("Category matches")
+            if query_lower in tool.description.lower():
+                score += 20
+                reasons.append("Description matches")
+            if "**Key Features:**" in tool.description:
+                features_section = tool.description.split("**Key Features:**")[1].split("**")[0]
+                if query_lower in features_section.lower():
+                    score += 25
+                    reasons.append("Features match")
+            
+            if score > 0:
+                scored_tools.append({
+                    "name": tool.name,
+                    "id": tool.id,
+                    "slug": tool.slug,
+                    "relevance_score": min(score, 100),
+                    "why_recommended": "; ".join(reasons),
+                    "use_case": f"Use for {tool.category.lower()} needs",
+                    "category": tool.category,
+                    "github_stars": tool.github_stars,
+                    "license": tool.license,
+                    "pricing_model": tool.pricing_model,
+                    "homepage_url": tool.homepage_url
+                })
+        
+        scored_tools.sort(key=lambda x: x["relevance_score"], reverse=True)
+        
+        return {
+            "recommended_tools": scored_tools[:5],
+            "search_summary": f"Found {len(scored_tools)} tools matching '{query}'",
+            "alternative_suggestions": ["Try specific keywords", "Search by category"]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Search failed")
+
+@app.get("/api/analytics/overview")
+async def get_analytics_overview(db: Session = Depends(get_db)):
+    """Get comprehensive analytics overview"""
+    try:
+        # Get basic counts
+        total_tools = db.query(Tool).count()
+        
+        # Category distribution
+        category_stats = db.query(Tool.category, func.count(Tool.id)).group_by(Tool.category).all()
+        
+        # Pricing model distribution
+        pricing_stats = db.query(Tool.pricing_model, func.count(Tool.id)).group_by(Tool.pricing_model).all()
+        
+        # License distribution
+        license_stats = db.query(Tool.license, func.count(Tool.id)).group_by(Tool.license).all()
+        
+        # Top tools by stars
+        top_tools = db.query(Tool).order_by(Tool.github_stars.desc()).limit(10).all()
+        
+        # GitHub statistics
+        total_stars = db.query(func.sum(Tool.github_stars)).scalar() or 0
+        total_forks = db.query(func.sum(Tool.github_forks)).scalar() or 0
+        avg_stars = db.query(func.avg(Tool.github_stars)).scalar() or 0
+        
+        # Growth trends (mock data for now - can be enhanced with real tracking)
+        growth_data = [
+            {"month": "Jan", "tools": 5, "stars": 50000},
+            {"month": "Feb", "tools": 6, "stars": 75000},
+            {"month": "Mar", "tools": 8, "stars": 120000},
+            {"month": "Apr", "tools": 10, "stars": 180000},
+            {"month": "May", "tools": 10, "stars": total_stars}
+        ]
+        
+        return {
+            "overview": {
+                "total_tools": total_tools,
+                "total_stars": int(total_stars),
+                "total_forks": int(total_forks),
+                "avg_stars": int(avg_stars),
+                "categories": len(category_stats),
+                "licenses": len([l for l in license_stats if l[0]])
+            },
+            "category_distribution": [
+                {"name": cat, "count": count, "percentage": round((count/total_tools)*100, 1)}
+                for cat, count in category_stats
+            ],
+            "pricing_distribution": [
+                {"name": pricing.title(), "count": count, "percentage": round((count/total_tools)*100, 1)}
+                for pricing, count in pricing_stats
+            ],
+            "license_distribution": [
+                {"name": license or "Unknown", "count": count, "percentage": round((count/total_tools)*100, 1)}
+                for license, count in license_stats if count > 0
+            ][:10],  # Top 10 licenses
+            "top_tools": [
+                {
+                    "name": tool.name,
+                    "category": tool.category,
+                    "stars": tool.github_stars,
+                    "forks": tool.github_forks,
+                    "license": tool.license,
+                    "pricing": tool.pricing_model
+                }
+                for tool in top_tools
+            ],
+            "growth_trends": growth_data,
+            "insights": [
+                f"Most popular category: {max(category_stats, key=lambda x: x[1])[0]} ({max(category_stats, key=lambda x: x[1])[1]} tools)",
+                f"Average GitHub stars per tool: {int(avg_stars):,}",
+                f"Most common license: {max([l for l in license_stats if l[0]], key=lambda x: x[1])[0]}",
+                f"Total community engagement: {int(total_stars + total_forks):,} stars + forks"
+            ]
+        }
+    except Exception as e:
+        print(f"Analytics error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load analytics")
+
+@app.get("/api/analytics/tools/{tool_id}")
+async def get_tool_analytics(tool_id: int, db: Session = Depends(get_db)):
+    """Get analytics for a specific tool"""
+    try:
+        tool = db.query(Tool).filter(Tool.id == tool_id).first()
+        if not tool:
+            raise HTTPException(status_code=404, detail="Tool not found")
+        
+        # Get category peers for comparison
+        category_peers = db.query(Tool).filter(
+            Tool.category == tool.category,
+            Tool.id != tool.id
+        ).order_by(Tool.github_stars.desc()).limit(5).all()
+        
+        # Calculate rankings
+        category_rank = db.query(Tool).filter(
+            Tool.category == tool.category,
+            Tool.github_stars > tool.github_stars
+        ).count() + 1
+        
+        overall_rank = db.query(Tool).filter(
+            Tool.github_stars > tool.github_stars
+        ).count() + 1
+        
+        return {
+            "tool": {
+                "name": tool.name,
+                "category": tool.category,
+                "stars": tool.github_stars,
+                "forks": tool.github_forks,
+                "license": tool.license,
+                "pricing": tool.pricing_model
+            },
+            "rankings": {
+                "category_rank": category_rank,
+                "overall_rank": overall_rank,
+                "category_total": db.query(Tool).filter(Tool.category == tool.category).count()
+            },
+            "category_peers": [
+                {
+                    "name": peer.name,
+                    "stars": peer.github_stars,
+                    "forks": peer.github_forks
+                }
+                for peer in category_peers
+            ],
+            "metrics": {
+                "popularity_score": min(100, (tool.github_stars / 1000) * 10),
+                "community_engagement": tool.github_stars + tool.github_forks,
+                "fork_ratio": round((tool.github_forks / max(tool.github_stars, 1)) * 100, 2)
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to load tool analytics")
+
+@app.post("/api/admin/enhance-tools")
+async def enhance_tools_endpoint():
+    """Enhance all tools with GitHub README data"""
+    try:
+        from enhance_tools import ToolEnhancer
+        enhancer = ToolEnhancer()
+        enhancer.enhance_all_tools()
+        return {"message": "Tools enhanced successfully", "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
+
+@app.post("/api/admin/enhance-tool/{tool_id}")
+async def enhance_single_tool(tool_id: int, db: Session = Depends(get_db)):
+    """Enhance a single tool with GitHub README data"""
+    try:
+        from enhance_tools import ToolEnhancer
+        tool = db.query(Tool).filter(Tool.id == tool_id).first()
+        if not tool:
+            raise HTTPException(status_code=404, detail="Tool not found")
+        
+        enhancer = ToolEnhancer()
+        github_info = enhancer.extract_github_info(tool.github_url)
+        
+        if github_info:
+            readme_content = enhancer.fetch_github_readme(github_info['owner'], github_info['repo'])
+            github_stats = enhancer.fetch_github_stats(github_info['owner'], github_info['repo'])
+            
+            if readme_content:
+                readme_info = enhancer.parse_readme_content(readme_content)
+                enhanced_description = enhancer.enhance_tool_description(tool, readme_info, github_stats)
+                tool.description = enhanced_description
+                
+                # Update stats
+                if github_stats.get('stars'):
+                    tool.github_stars = github_stats['stars']
+                if github_stats.get('forks'):
+                    tool.github_forks = github_stats['forks']
+                
+                db.commit()
+                return {"message": f"Tool {tool.name} enhanced successfully", "status": "success"}
+        
+        raise HTTPException(status_code=400, detail="Could not enhance tool")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

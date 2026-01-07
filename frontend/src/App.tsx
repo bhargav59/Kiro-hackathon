@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
 import { Search, Star, Github, ExternalLink, User, LogOut } from 'lucide-react';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
+import NaturalLanguageQuery from './components/NaturalLanguageQuery';
+import EnhancedComparison from './components/EnhancedComparison';
+import DiscoverPage from './components/DiscoverPage';
+import ReviewsSection from './components/ReviewsSection';
+import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
 
 // API Base URL
 const API_BASE = 'http://localhost:8000';
@@ -130,7 +136,10 @@ const Header: React.FC = () => {
           
           <nav className="flex items-center space-x-6">
             <Link to="/tools" className="text-gray-700 hover:text-blue-600">Tools</Link>
+            <Link to="/discover" className="text-gray-700 hover:text-blue-600">Discover</Link>
             <Link to="/compare" className="text-gray-700 hover:text-blue-600">Compare</Link>
+            <Link to="/ai-search" className="text-gray-700 hover:text-blue-600">🤖 AI Search</Link>
+            <Link to="/analytics" className="text-gray-700 hover:text-blue-600">📊 Analytics</Link>
             
             {user ? (
               <div className="flex items-center space-x-4">
@@ -222,8 +231,11 @@ const HomePage: React.FC = () => {
               <Link to="/tools" className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100">
                 Browse Tools
               </Link>
-              <Link to="/compare" className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600">
-                Compare Tools
+              <Link to="/discover" className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-10 py-4 rounded-xl font-bold hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl">
+                🔍 Discover Tools
+              </Link>
+              <Link to="/compare" className="border-2 border-white text-white px-10 py-4 rounded-xl font-bold hover:bg-white hover:text-blue-600 transition-all duration-200 shadow-lg">
+                ⚖️ Compare Tools
               </Link>
             </div>
           </div>
@@ -371,183 +383,9 @@ const ToolDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
 
-// Compare Page
-const ComparePage: React.FC = () => {
-  const [selectedTools, setSelectedTools] = useState<Tool[]>([]);
-  const [availableTools, setAvailableTools] = useState<Tool[]>([]);
-  const [search, setSearch] = useState('');
-  const [comparison, setComparison] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchAvailableTools();
-  }, []);
-
-  const fetchAvailableTools = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/tools?limit=50`);
-      const tools = await response.json();
-      setAvailableTools(tools);
-    } catch (error) {
-      console.error('Failed to fetch tools:', error);
-    }
-  };
-
-  const addTool = (tool: Tool) => {
-    if (selectedTools.length < 4 && !selectedTools.find(t => t.id === tool.id)) {
-      setSelectedTools([...selectedTools, tool]);
-    }
-  };
-
-  const removeTool = (toolId: number) => {
-    setSelectedTools(selectedTools.filter(t => t.id !== toolId));
-  };
-
-  const generateComparison = async () => {
-    if (selectedTools.length < 2) return;
-    
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE}/api/ai/compare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool_ids: selectedTools.map(t => t.id) })
-      });
-      const comparisonData = await response.json();
-      setComparison(comparisonData);
-    } catch (error) {
-      console.error('Failed to generate comparison:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredTools = availableTools.filter(tool => 
-    tool.name.toLowerCase().includes(search.toLowerCase()) &&
-    !selectedTools.find(t => t.id === tool.id)
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">🤖 AI-Powered Tool Comparison</h1>
-        
-        {/* Tool Selection */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Select Tools to Compare (2-4 tools)</h2>
-          
-          {/* Search */}
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder="Search tools..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          
-          {/* Selected Tools */}
-          {selectedTools.length > 0 && (
-            <div className="mb-6">
-              <h3 className="font-semibold mb-2">Selected Tools:</h3>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {selectedTools.map(tool => (
-                  <div key={tool.id} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full flex items-center">
-                    <span>{tool.name}</span>
-                    <button onClick={() => removeTool(tool.id)} className="ml-2 text-blue-600 hover:text-blue-800">×</button>
-                  </div>
-                ))}
-              </div>
-              {selectedTools.length >= 2 && (
-                <button
-                  onClick={generateComparison}
-                  disabled={loading}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-2 rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50"
-                >
-                  {loading ? '🤖 Generating AI Analysis...' : '🚀 Generate AI Comparison'}
-                </button>
-              )}
-            </div>
-          )}
-          
-          {/* Available Tools */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-64 overflow-y-auto">
-            {filteredTools.slice(0, 12).map(tool => (
-              <div key={tool.id} className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-semibold">{tool.name}</h4>
-                    <p className="text-sm text-gray-600">{tool.category}</p>
-                    <div className="flex items-center text-xs text-gray-500 mt-1">
-                      <Star size={12} className="text-yellow-400 mr-1" />
-                      {tool.github_stars}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => addTool(tool)}
-                    disabled={selectedTools.length >= 4}
-                    className="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    Add
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* AI Comparison Results */}
-        {comparison && (
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-2xl font-semibold mb-6">🤖 AI Analysis Results</h2>
-            
-            {/* Summary */}
-            <div className="mb-8 bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold mb-2 text-blue-900">Summary</h3>
-              <p className="text-blue-800">{comparison.summary}</p>
-            </div>
-
-            {/* Tool Comparison Cards */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {selectedTools.map(tool => (
-                <div key={tool.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
-                  <h4 className="text-xl font-semibold mb-4 text-gray-900">{tool.name}</h4>
-                  
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div><strong>Category:</strong> {tool.category}</div>
-                      <div><strong>Stars:</strong> ⭐ {tool.github_stars?.toLocaleString()}</div>
-                      <div><strong>License:</strong> {tool.license || 'N/A'}</div>
-                      <div><strong>Pricing:</strong> {tool.pricing_model}</div>
-                    </div>
-                    
-                    <div className="bg-green-50 p-3 rounded-lg">
-                      <h5 className="font-semibold text-green-700 mb-2">✅ Key Strengths</h5>
-                      <p className="text-green-800 text-sm">{comparison.strengths[tool.name]}</p>
-                    </div>
-                    
-                    <div className="bg-blue-50 p-3 rounded-lg">
-                      <h5 className="font-semibold text-blue-700 mb-2">🎯 Best Use Cases</h5>
-                      <p className="text-blue-800 text-sm">{comparison.use_cases[tool.name]}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* AI Recommendations */}
-            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold mb-3 text-purple-900">🎯 AI Recommendations</h3>
-              <p className="text-purple-800">{comparison.recommendations}</p>
-            </div>
-          </div>
-        )}
+        {/* Reviews Section */}
+        <ReviewsSection toolId={tool.id} toolName={tool.name} />
       </div>
     </div>
   );
@@ -743,8 +581,11 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/tools" element={<ToolsPage />} />
-            <Route path="/tools/:slug" element={<ToolDetailPage />} />
-            <Route path="/compare" element={<ComparePage />} />
+            <Route path="/tools/:slug" element={<EnhancedToolDetailPage />} />
+            <Route path="/discover" element={<DiscoverPage />} />
+            <Route path="/compare" element={<EnhancedComparison />} />
+            <Route path="/ai-search" element={<NaturalLanguageQuery />} />
+            <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
