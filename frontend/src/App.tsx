@@ -7,6 +7,7 @@ import EnhancedComparison from './components/EnhancedComparison';
 import DiscoverPage from './components/DiscoverPage';
 import ReviewsSection from './components/ReviewsSection';
 import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
+import EnhancedAuth from './components/EnhancedAuth';
 
 // API Base URL
 const API_BASE = 'http://localhost:8000';
@@ -131,7 +132,9 @@ const Header: React.FC = () => {
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold">CE</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">CloudEngineered</span>
+            <div className="flex items-center">
+              <img src="/logo.png" alt="Logo" className="h-8" />
+            </div>
           </Link>
           
           <nav className="flex items-center space-x-6">
@@ -425,151 +428,7 @@ const ProfilePage: React.FC = () => {
 };
 
 // Login Page
-const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const { login } = React.useContext(AuthContext);
-  const navigate = useNavigate();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await login(email, password);
-      navigate('/');
-    } catch (error) {
-      setError('Invalid credentials');
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-sm p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Login</h2>
-        
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
-          >
-            Login
-          </button>
-        </form>
-        
-        <p className="mt-4 text-center text-gray-600">
-          Don't have an account? <Link to="/register" className="text-blue-600 hover:text-blue-800">Sign up</Link>
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// Register Page
-const RegisterPage: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  const { register } = React.useContext(AuthContext);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await register(email, username, password);
-      setSuccess(true);
-    } catch (error) {
-      setError('Registration failed');
-    }
-  };
-
-  if (success) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-sm p-8 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Registration Successful!</h2>
-          <p className="text-gray-600 mb-6">You can now log in with your credentials.</p>
-          <Link to="/login" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
-            Go to Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-sm p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Sign Up</h2>
-        
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            required
-          />
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
-          >
-            Sign Up
-          </button>
-        </form>
-        
-        <p className="mt-4 text-center text-gray-600">
-          Already have an account? <Link to="/login" className="text-blue-600 hover:text-blue-800">Login</Link>
-        </p>
-      </div>
-    </div>
-  );
-};
+// Main App Component
 
 // Main App
 const App: React.FC = () => {
@@ -587,8 +446,8 @@ const App: React.FC = () => {
             <Route path="/ai-search" element={<NaturalLanguageQuery />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/login" element={<EnhancedAuth />} />
+            <Route path="/register" element={<EnhancedAuth />} />
           </Routes>
         </div>
       </Router>

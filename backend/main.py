@@ -1,6 +1,10 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import RedirectResponse
+import httpx
+from oauth_config import oauth, get_oauth_providers
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -55,6 +59,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
     github_id = Column(String)
+    oauth_provider = Column(String, nullable=True)  # 'google', 'github', or None
     avatar_url = Column(String)
     bio = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -179,6 +184,9 @@ Base.metadata.create_all(bind=engine)
 
 # FastAPI app
 app = FastAPI(title="CloudEngineered API", version="1.0.0")
+
+# Add session middleware for OAuth
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY", "your-secret-key-here"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -356,6 +364,99 @@ def generate_ai_summary(tool_name: str, description: str, category: str) -> str:
 @app.get("/")
 def read_root():
     return {"message": "CloudEngineered API", "version": "1.0.0"}
+
+@app.get("/api/auth/providers")
+async def get_auth_providers():
+    """Get available OAuth providers"""
+    return {"providers": get_oauth_providers()}
+
+@app.get("/api/auth/{provider}")
+async def oauth_login(provider: str, request: Request):
+    """Initiate OAuth login"""
+    if provider not in ['google', 'github']:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+    
+    client = oauth.create_client(provider)
+    redirect_uri = f"http://localhost:8000/api/auth/{provider}/callback"
+    return await client.authorize_redirect(request, redirect_uri)
+
+@app.get("/api/auth/{provider}/callback")
+async def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+    """Handle OAuth callback"""
+    if provider not in ['google', 'github']:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+    
+    try:
+        client = oauth.create_client(provider)
+        token = await client.authorize_access_token(request)
+        
+        if provider == 'google':
+            user_info = token.get('userinfo')
+            if not user_info:
+                user_info = await client.parse_id_token(token)
+            
+            email = user_info.get('email')
+            name = user_info.get('name')
+            avatar_url = user_info.get('picture')
+            
+        elif provider == 'github':
+            # Get user info from GitHub API
+            async with httpx.AsyncClient() as http_client:
+                headers = {'Authorization': f"token {token['access_token']}"}
+                
+                # Get user profile
+                user_response = await http_client.get('https://api.github.com/user', headers=headers)
+                user_data = user_response.json()
+                
+                # Get user email (might be private)
+                email_response = await http_client.get('https://api.github.com/user/emails', headers=headers)
+                emails = email_response.json()
+                primary_email = next((e['email'] for e in emails if e['primary']), None)
+                
+                email = primary_email or user_data.get('email')
+                name = user_data.get('name') or user_data.get('login')
+                avatar_url = user_data.get('avatar_url')
+        
+        if not email:
+            raise HTTPException(status_code=400, detail="Email not available from provider")
+        
+        # Check if user exists
+        user = db.query(User).filter(User.email == email).first()
+        
+        if not user:
+            # Create new user
+            user = User(
+                username=name or email.split('@')[0],
+                email=email,
+                password_hash="",  # OAuth users don't have passwords
+                oauth_provider=provider,
+                avatar_url=avatar_url
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            # Update OAuth info if needed
+            if not user.oauth_provider:
+                user.oauth_provider = provider
+                user.avatar_url = avatar_url or user.avatar_url
+                db.commit()
+        
+        # Create JWT token
+        access_token = create_access_token({"sub": user.id})
+        
+        # Redirect to frontend with token
+        return RedirectResponse(
+            url=f"http://localhost:3000/auth/callback?token={access_token}&user={user.username}",
+            status_code=302
+        )
+        
+    except Exception as e:
+        print(f"OAuth error: {e}")
+        return RedirectResponse(
+            url="http://localhost:3000/auth/error?message=Authentication failed",
+            status_code=302
+        )
 
 @app.post("/api/auth/github")
 def github_auth(github_data: dict, db: Session = Depends(get_db)):
