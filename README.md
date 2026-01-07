@@ -13,27 +13,7 @@
 - **📱 Responsive Design**: Works seamlessly across all devices
 - **🌐 Natural Language Search**: "Find me a Docker alternative for containers"
 
-## 🏆 Hackathon Submission Highlights
 
-### Application Quality (40/40 pts)
-- ✅ **Complete Platform**: Full DevOps tool discovery and comparison
-- ✅ **Real-World Value**: Solves actual developer pain points
-- ✅ **Production Quality**: Professional UI, error handling, TypeScript
-
-### Kiro CLI Usage (20/20 pts)
-- ✅ **Advanced Workflows**: Custom commands for development and testing
-- ✅ **Multi-Language Development**: Python + TypeScript + Shell scripting
-- ✅ **Innovation**: AI integration, OAuth flows, data pipelines
-
-### Documentation (20/20 pts)
-- ✅ **Comprehensive**: Setup, API docs, architecture, and workflows
-- ✅ **Clear Instructions**: Step-by-step guides with code examples
-- ✅ **Process Transparency**: Complete development history
-
-### Innovation (15/15 pts)
-- ✅ **AI-Native Platform**: First DevOps tool platform with LLM integration
-- ✅ **Multi-Source Data**: GitHub + Web scraping + Package managers
-- ✅ **Creative Solutions**: Fallback systems, progressive enhancement
 
 ## 🛠 Tech Stack
 
