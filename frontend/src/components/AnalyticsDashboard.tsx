@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Users, Star, GitFork, Award, Activity } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface AnalyticsData {
   overview: {

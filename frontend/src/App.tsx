@@ -10,7 +10,7 @@ import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
 import EnhancedAuth from './components/EnhancedAuth';
 
 // API Base URL
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from './config';
 
 // Types
 interface Tool {

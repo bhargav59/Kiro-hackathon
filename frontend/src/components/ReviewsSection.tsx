@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Star, MessageCircle, ThumbsUp, Calendar, User } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface Review {
   id: number;

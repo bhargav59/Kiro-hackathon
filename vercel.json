@@ -1,12 +1,6 @@
 {
-  "build": {
-    "commands": [
-      "cd frontend && npm install && npm run build"
-    ]
-  },
-  "install": {
-    "commands": [
-      "cd frontend && npm install"
-    ]
-  }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/(.*)", "destination": "/frontend/index.html" }
+  ]
 }

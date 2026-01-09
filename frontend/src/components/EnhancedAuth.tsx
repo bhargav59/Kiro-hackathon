@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, User, Github, Chrome, AlertCircle, CheckCircle } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface AuthProvider {
   name: string;

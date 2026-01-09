@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Star, TrendingUp, Users, Calendar } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface Tool {
   id: number;

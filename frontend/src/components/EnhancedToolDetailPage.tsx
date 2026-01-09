@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Star, Github, ExternalLink, Download, Users, Calendar, Award, Zap, Shield, TrendingUp, BookOpen, Code, Heart } from 'lucide-react';
 import ReviewsSection from './ReviewsSection';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface Tool {
   id: number;

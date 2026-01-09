@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Sparkles, Star, ExternalLink } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+import { API_BASE } from '../config';
 
 interface SearchResult {
   name: string;
