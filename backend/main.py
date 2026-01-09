@@ -23,7 +23,7 @@ import google.generativeai as genai
 from tool_knowledge import TOOL_KNOWLEDGE, get_tool_data, calculate_roi
 
 # Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cloudengineered.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")  # Use in-memory for Vercel
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

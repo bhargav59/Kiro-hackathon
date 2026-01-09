@@ -2,10 +2,11 @@ import requests
 import json
 from datetime import datetime
 from sqlalchemy.orm import Session
-from main import SessionLocal, Tool, create_slug
+from main import SessionLocal, Tool, User, create_slug
+import bcrypt
 
 def seed_sample_tools():
-    """Seed the database with sample DevOps tools"""
+    """Seed the database with sample DevOps tools and demo user"""
     
     sample_tools = [
         {
@@ -108,11 +109,23 @@ def seed_sample_tools():
     
     db = SessionLocal()
     try:
+        # Create demo user
+        demo_user = db.query(User).filter(User.email == "demo@cloudengineered.com").first()
+        if not demo_user:
+            hashed_password = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt())
+            demo_user = User(
+                email="demo@cloudengineered.com",
+                name="Demo User",
+                hashed_password=hashed_password.decode('utf-8'),
+                is_active=True
+            )
+            db.add(demo_user)
+            print("Added demo user: demo@cloudengineered.com / demo123")
+        
         for tool_data in sample_tools:
             # Check if tool already exists
             existing_tool = db.query(Tool).filter(Tool.name == tool_data["name"]).first()
             if existing_tool:
-                print(f"Tool {tool_data['name']} already exists, skipping...")
                 continue
             
             # Create slug
@@ -138,10 +151,10 @@ def seed_sample_tools():
             print(f"Added tool: {tool_data['name']}")
         
         db.commit()
-        print("Sample tools seeded successfully!")
+        print("Sample tools and demo user seeded successfully!")
         
     except Exception as e:
-        print(f"Error seeding tools: {e}")
+        print(f"Error seeding: {e}")
         db.rollback()
     finally:
         db.close()
