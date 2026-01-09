@@ -1,0 +1,24 @@
+name: Sourcery Code Quality
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  sourcery:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Review Python code with Sourcery
+      uses: sourcery-ai/action@v1
+      with:
+        token: ${{ secrets.SOURCERY_TOKEN }}
+        
+    - name: Upload coverage to Codecov
+      if: github.event_name == 'pull_request'
+      uses: codecov/codecov-action@v3

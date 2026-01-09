@@ -1,0 +1,25 @@
+[tool.sourcery]
+# Sourcery configuration for CloudEngineered
+python_version = "3.9"
+
+# Rules configuration
+rules = [
+    "default",
+    "no-complex-if-expressions",
+    "no-long-functions",
+    "no-duplicate-functions"
+]
+
+# Skip certain directories
+skip = [
+    "venv/",
+    ".venv/",
+    "node_modules/",
+    "__pycache__/",
+    ".git/"
+]
+
+# GitHub integration settings
+github_sourcery_branch = "sourcery/{base_branch}"
+github_request_review = "author"
+github_merge_ready_comment = true
