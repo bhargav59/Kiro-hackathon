@@ -110,17 +110,20 @@ def seed_sample_tools():
     db = SessionLocal()
     try:
         # Create demo user
-        demo_user = db.query(User).filter(User.email == "demo@cloudengineered.com").first()
-        if not demo_user:
-            hashed_password = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt())
-            demo_user = User(
-                email="demo@cloudengineered.com",
-                name="Demo User",
-                hashed_password=hashed_password.decode('utf-8'),
-                is_active=True
-            )
-            db.add(demo_user)
-            print("Added demo user: demo@cloudengineered.com / demo123")
+        try:
+            demo_user = db.query(User).filter(User.email == "demo@cloudengineered.com").first()
+            if not demo_user:
+                hashed_password = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt())
+                demo_user = User(
+                    email="demo@cloudengineered.com",
+                    name="Demo User",
+                    hashed_password=hashed_password.decode('utf-8'),
+                    is_active=True
+                )
+                db.add(demo_user)
+                print("Added demo user: demo@cloudengineered.com / demo123")
+        except Exception as e:
+            print(f"Demo user creation error (may already exist): {e}")
         
         for tool_data in sample_tools:
             # Check if tool already exists
