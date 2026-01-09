@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Star, MessageCircle, ThumbsUp, Calendar, User } from 'lucide-react';
+import { Star, MessageCircle, Calendar, User } from 'lucide-react';
 
 import { API_BASE } from '../config';
 

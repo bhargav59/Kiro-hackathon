@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom';
 import { Search, Star, Github, ExternalLink, User, LogOut } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
@@ -325,7 +325,7 @@ const ToolsPage: React.FC = () => {
 };
 
 // Tool Detail Page
-const ToolDetailPage: React.FC = () => {
+const _ToolDetailPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const [tool, setTool] = useState<Tool | null>(null);
 

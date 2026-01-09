@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Star, TrendingUp, Users, Calendar } from 'lucide-react';
+import { Search, Star, Users } from 'lucide-react';
 
 import { API_BASE } from '../config';
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Star, Github, ExternalLink, Download, Users, Calendar, Award, Zap, Shield, TrendingUp, BookOpen, Code, Heart } from 'lucide-react';
+import { Star, Github, ExternalLink, Users, Award, Zap, Shield, TrendingUp, BookOpen, Code, Heart } from 'lucide-react';
 import ReviewsSection from './ReviewsSection';
 
 import { API_BASE } from '../config';
