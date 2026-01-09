@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom';
-import { Search, Star, Github, ExternalLink, User, LogOut } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { Search, Star, User, LogOut } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
 import EnhancedComparison from './components/EnhancedComparison';
 import DiscoverPage from './components/DiscoverPage';
-import ReviewsSection from './components/ReviewsSection';
 import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
 import EnhancedAuth from './components/EnhancedAuth';
 
