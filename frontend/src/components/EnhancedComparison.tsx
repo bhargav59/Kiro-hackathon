@@ -185,7 +185,7 @@ const EnhancedComparison: React.FC = () => {
               </h2>
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-8 rounded-xl border border-blue-100">
                 <div className="text-blue-900 leading-relaxed text-lg space-y-4">
-                  {comparison.detailed_analysis.overview.split('\n').map((paragraph, idx) => (
+                  {(comparison.detailed_analysis.overview || '').split('\n').map((paragraph, idx) => (
                     <p key={idx} className="mb-3">{paragraph}</p>
                   ))}
                 </div>
@@ -220,7 +220,7 @@ const EnhancedComparison: React.FC = () => {
                         {key}
                       </h3>
                       <div className="space-y-3">
-                        {(value as string).split('\n\n').map((tool, idx) => {
+                        {((value as string) || '').split('\n\n').map((tool, idx) => {
                           const parts = tool.split('**');
                           return (
                             <div key={idx} className={`${colors.content} space-y-2`}>
@@ -273,7 +273,7 @@ const EnhancedComparison: React.FC = () => {
                         {key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                       </h3>
                       <div className="space-y-3">
-                        {(value as string).split('\n\n').map((section, idx) => {
+                        {((value as string) || '').split('\n\n').map((section, idx) => {
                           const parts = section.split('**');
                           return (
                             <div key={idx} className={`${colors.content} space-y-2`}>
@@ -320,7 +320,7 @@ const EnhancedComparison: React.FC = () => {
                         {icons[key as keyof typeof icons]} {key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                       </h3>
                       <div className="text-gray-700 space-y-2">
-                        {(value as string).split('**').map((part, i) => 
+                        {((value as string) || '').split('**').map((part, i) => 
                           i % 2 === 1 ? 
                             <strong key={i} className="font-bold">{part}</strong> : 
                             <span key={i}>{part}</span>
@@ -451,7 +451,7 @@ const EnhancedComparison: React.FC = () => {
                 🎯 Final Recommendation
               </h2>
               <div className="bg-white bg-opacity-10 p-6 rounded-lg space-y-4">
-                {comparison.detailed_analysis.final_recommendation.split(/\n\s*\n/).filter(paragraph => paragraph.trim()).map((paragraph, idx) => {
+                {(comparison.detailed_analysis.final_recommendation || '').split(/\n\s*\n/).filter(paragraph => paragraph.trim()).map((paragraph, idx) => {
                   const parts = paragraph.split('**');
                   return (
                     <div key={idx} className="leading-relaxed text-lg mb-4">

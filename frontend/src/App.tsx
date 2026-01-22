@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Search, Star, User, LogOut } from 'lucide-react';
+import { Search, Star, User, LogOut, Settings } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
 import EnhancedComparison from './components/EnhancedComparison';
 import DiscoverPage from './components/DiscoverPage';
 import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
 import EnhancedAuth from './components/EnhancedAuth';
+import AdminPage from './components/AdminPage';
 
 // API Base URL
 import { API_BASE } from './config';
@@ -375,6 +376,7 @@ const App: React.FC = () => {
             <Route path="/compare" element={<EnhancedComparison />} />
             <Route path="/ai-search" element={<NaturalLanguageQuery />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
+            <Route path="/admin" element={<AdminPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/login" element={<EnhancedAuth />} />
             <Route path="/register" element={<EnhancedAuth />} />

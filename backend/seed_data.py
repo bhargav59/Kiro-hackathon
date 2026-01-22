@@ -116,9 +116,8 @@ def seed_sample_tools():
                 hashed_password = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt())
                 demo_user = User(
                     email="demo@cloudengineered.com",
-                    name="Demo User",
-                    hashed_password=hashed_password.decode('utf-8'),
-                    is_active=True
+                    username="demo_user",
+                    password_hash=hashed_password.decode('utf-8')
                 )
                 db.add(demo_user)
                 print("Added demo user: demo@cloudengineered.com / demo123")
