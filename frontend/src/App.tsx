@@ -12,6 +12,7 @@ import AdminDashboard from './components/AdminDashboard';
 import BlogDetailPage from './components/BlogDetailPage';
 import SimpleToolsPage from './components/SimpleToolsPage';
 import TestPage from './components/TestPage';
+import ProfilePage from './components/ProfilePage';
 // Payment components
 import PricingPage from './components/PricingPage';
 import SubscriptionManager from './components/SubscriptionManager';
@@ -268,38 +269,7 @@ const HomePage: React.FC = () => {
   );
 };
 
-// Profile Page
-const ProfilePage: React.FC = () => {
-  const { user } = React.useContext(AuthContext);
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Please log in to view your profile</h2>
-          <Link to="/login" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
-            Log In
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-sm p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Profile</h1>
-          <div className="space-y-2">
-            <div><strong>Username:</strong> {user.username}</div>
-            <div><strong>Email:</strong> {user.email}</div>
-            <div><strong>Member since:</strong> {new Date(user.created_at).toLocaleDateString()}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+// ProfilePage is now imported from ./components/ProfilePage
 
 // Login Page
 // Main App Component

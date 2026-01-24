@@ -26,6 +26,9 @@ from auth_utils import (
 # Import payment routes
 from payment_routes import router as payment_router
 
+# Import OAuth service
+from oauth_service import oauth_service
+
 app = FastAPI(
     title="CloudEngineered API",
     description="API for CloudEngineered DevOps Tools Platform with Payment Processing",
@@ -102,13 +105,18 @@ def init_db():
     conn = sqlite3.connect('blog.db')
     cursor = conn.cursor()
     
-    # Users table
+    # Users table with OAuth and profile fields
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
+            password_hash TEXT,
+            avatar_url TEXT,
+            bio TEXT,
+            github_id TEXT,
+            google_id TEXT,
+            oauth_provider TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -224,8 +232,10 @@ def login(user: UserLogin, request: Request):
         "user": {"id": db_user[0], "username": db_user[1], "email": db_user[2]}
     }
 
+from fastapi import Header
+
 @app.get("/api/auth/me")
-def get_current_user(authorization: str = None):
+def get_current_user(authorization: str = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -235,7 +245,190 @@ def get_current_user(authorization: str = None):
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    return {"id": payload["user_id"], "username": payload["username"]}
+    # Fetch full user data from database
+    conn = sqlite3.connect('blog.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, username, email, avatar_url, bio, github_id, google_id, oauth_provider, created_at
+        FROM users WHERE id = ?
+    ''', (payload["user_id"],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {
+        "id": user[0],
+        "username": user[1],
+        "email": user[2],
+        "avatar_url": user[3],
+        "bio": user[4],
+        "github_connected": bool(user[5]),
+        "google_connected": bool(user[6]),
+        "oauth_provider": user[7],
+        "created_at": user[8]
+    }
+
+
+# OAuth Routes
+@app.get("/api/auth/providers")
+def get_oauth_providers():
+    """Get list of available OAuth providers."""
+    return {"providers": oauth_service.get_available_providers()}
+
+
+@app.get("/api/auth/oauth/{provider}/authorize")
+def oauth_authorize(provider: str):
+    """Get OAuth authorization URL for a provider."""
+    try:
+        auth_url, state = oauth_service.get_authorization_url(provider)
+        return {"authorization_url": auth_url, "state": state}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/auth/oauth/{provider}/callback")
+async def oauth_callback(provider: str, request: Request):
+    """Handle OAuth callback and create/login user."""
+    body = await request.json()
+    code = body.get("code")
+    state = body.get("state")
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+    
+    # Validate state (optional in demo mode)
+    # oauth_service.validate_state(state)
+    
+    try:
+        # Exchange code for token
+        token_data = await oauth_service.exchange_code_for_token(provider, code)
+        access_token = token_data.get("access_token")
+        
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Failed to get access token")
+        
+        # Fetch user info from provider
+        user_info = await oauth_service.get_user_info(provider, access_token)
+        
+        # Get email for GitHub if not in user info
+        if provider == "github" and not user_info.get("email"):
+            email = await oauth_service.get_github_email(access_token)
+            user_info["email"] = email
+        
+        # Find or create user
+        conn = sqlite3.connect('blog.db')
+        cursor = conn.cursor()
+        
+        provider_id_col = f"{provider}_id"
+        
+        # Check if user exists with this OAuth provider ID
+        cursor.execute(
+            f"SELECT id, username, email FROM users WHERE {provider_id_col} = ?",
+            (user_info["provider_id"],)
+        )
+        existing_user = cursor.fetchone()
+        
+        if existing_user:
+            # User exists, log them in
+            user_id = existing_user[0]
+            username = existing_user[1]
+        else:
+            # Check if email already exists
+            cursor.execute("SELECT id, username FROM users WHERE email = ?", (user_info["email"],))
+            email_user = cursor.fetchone()
+            
+            if email_user:
+                # Link OAuth to existing account
+                user_id = email_user[0]
+                username = email_user[1]
+                cursor.execute(
+                    f"UPDATE users SET {provider_id_col} = ?, avatar_url = COALESCE(avatar_url, ?) WHERE id = ?",
+                    (user_info["provider_id"], user_info.get("avatar_url"), user_id)
+                )
+            else:
+                # Create new user
+                cursor.execute('''
+                    INSERT INTO users (username, email, avatar_url, bio, ''' + provider_id_col + ''', oauth_provider)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    user_info["username"],
+                    user_info["email"],
+                    user_info.get("avatar_url"),
+                    user_info.get("bio"),
+                    user_info["provider_id"],
+                    provider
+                ))
+                user_id = cursor.lastrowid
+                username = user_info["username"]
+        
+        conn.commit()
+        conn.close()
+        
+        # Create JWT token
+        jwt_token = create_access_token({"user_id": user_id, "username": username})
+        
+        return {
+            "access_token": jwt_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "username": username,
+                "email": user_info["email"],
+                "avatar_url": user_info.get("avatar_url")
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth error: {str(e)}")
+
+
+# Profile Routes
+class ProfileUpdate(BaseModel):
+    username: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@app.put("/api/users/profile")
+async def update_profile(profile: ProfileUpdate, authorization: str = None):
+    """Update user profile."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.split(" ")[1]
+    payload = verify_token(token)
+    
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    conn = sqlite3.connect('blog.db')
+    cursor = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if profile.username:
+        updates.append("username = ?")
+        params.append(profile.username)
+    if profile.bio is not None:
+        updates.append("bio = ?")
+        params.append(profile.bio)
+    if profile.avatar_url:
+        updates.append("avatar_url = ?")
+        params.append(profile.avatar_url)
+    
+    if updates:
+        params.append(payload["user_id"])
+        cursor.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+    
+    conn.close()
+    return {"status": "success", "message": "Profile updated"}
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(forgot_request: ForgotPassword, request: Request):

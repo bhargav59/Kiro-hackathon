@@ -28,12 +28,12 @@ const EnhancedAuth: React.FC = () => {
 
   useEffect(() => {
     fetchProviders();
-    
+
     // Handle OAuth callback
     const token = searchParams.get('token');
     const user = searchParams.get('user');
     const errorMessage = searchParams.get('message');
-    
+
     if (token && user) {
       localStorage.setItem('token', token);
       localStorage.setItem('user', user);
@@ -62,13 +62,13 @@ const EnhancedAuth: React.FC = () => {
 
     try {
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const payload = isLogin 
+      const payload = isLogin
         ? { email: formData.email, password: formData.password }
-        : { 
-            username: formData.username, 
-            email: formData.email, 
-            password: formData.password 
-          };
+        : {
+          username: formData.username,
+          email: formData.email,
+          password: formData.password
+        };
 
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
@@ -99,8 +99,16 @@ const EnhancedAuth: React.FC = () => {
     }
   };
 
-  const handleOAuthLogin = (provider: string) => {
-    window.location.href = `${API_BASE}/api/auth/${provider}`;
+  const handleOAuthLogin = async (provider: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/oauth/${provider}/authorize`);
+      const data = await response.json();
+      if (data.authorization_url) {
+        window.location.href = data.authorization_url;
+      }
+    } catch (error) {
+      setError(`Failed to connect with ${provider}`);
+    }
   };
 
   const getProviderIcon = (provider: string) => {
@@ -160,7 +168,7 @@ const EnhancedAuth: React.FC = () => {
                   </button>
                 ))}
               </div>
-              
+
               <div className="mt-6 relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300" />
@@ -183,7 +191,7 @@ const EnhancedAuth: React.FC = () => {
                     type="text"
                     required
                     value={formData.username}
-                    onChange={(e) => setFormData({...formData, username: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                     className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                     placeholder="Choose a username"
                   />
@@ -199,7 +207,7 @@ const EnhancedAuth: React.FC = () => {
                   type="email"
                   required
                   value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                   placeholder="Enter your email"
                 />
@@ -214,7 +222,7 @@ const EnhancedAuth: React.FC = () => {
                   type="password"
                   required
                   value={formData.password}
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                   placeholder="Enter your password"
                 />
@@ -230,7 +238,7 @@ const EnhancedAuth: React.FC = () => {
                     type="password"
                     required
                     value={formData.confirmPassword}
-                    onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                     className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                     placeholder="Confirm your password"
                   />
