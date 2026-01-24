@@ -281,29 +281,66 @@ npm run build
 - **Compare Tools**: Select multiple tools for AI-powered comparison
 - **View Analytics**: Real-time platform statistics
 
+## 📂 .kiro/ Documentation
+
+This project includes comprehensive Kiro CLI documentation in the `.kiro/` directory:
+
+| File | Description |
+|------|-------------|
+| `.kiro/steering/global_rules.md` | Architecture principles, coding standards, and quality gates |
+| `.kiro/steering/PRD.md` | Product Requirements Document with features and success metrics |
+| `.kiro/steering/architecture.md` | Technical architecture and design decisions |
+| `.kiro/prompts/custom_commands.md` | Reusable development workflow commands |
+| `.kiro/prompts/workflows.md` | Automation and deployment workflows |
+| `.kiro/subagents/configuration.md` | Subagent delegation patterns and usage examples |
+| `.kiro/DEVLOG.md` | Development log with timeline, decisions, and lessons learned |
+
+### Key Documentation Highlights
+
+- **Global Rules**: Defines AI-first design, component-driven development, and security standards
+- **PRD**: Covers intelligent tool discovery, AI comparisons, OAuth authentication, and analytics
+- **Subagents**: Configures data-enhancer, ai-processor, frontend-developer, and backend-developer agents
+- **DEVLOG**: Documents 35+ hours of development across 4 days with all technical decisions
+
 ## 🔧 Development
+
 
 ### Project Structure
 ```
 cloudengineered/
-├── .kiro/                   # Kiro CLI configurations
-│   ├── steering/           # Global rules, PRD, architecture
-│   ├── prompts/            # Custom commands and workflows
-│   └── subagents/          # Subagent configurations
+├── .kiro/                       # Kiro CLI configurations & documentation
+│   ├── steering/               # Strategic documents
+│   │   ├── global_rules.md    # Architecture principles & coding standards
+│   │   ├── PRD.md             # Product Requirements Document
+│   │   └── architecture.md    # Technical architecture
+│   ├── prompts/                # Reusable prompts
+│   │   ├── custom_commands.md # Development workflow commands
+│   │   └── workflows.md       # Automation workflows
+│   ├── subagents/              # Subagent configurations
+│   │   └── configuration.md   # Agent delegation patterns
+│   └── DEVLOG.md               # Development log & decisions
 ├── backend/
-│   ├── blog_main.py        # Main FastAPI application
-│   ├── seed_*.py          # Database seeding scripts
-│   ├── requirements_simple.txt # Python dependencies
-│   └── blog.db            # SQLite database (auto-created)
+│   ├── blog_main.py            # Main FastAPI application
+│   ├── oauth_service.py        # OAuth 2.0 (GitHub/Google)
+│   ├── backup_service.py       # Database autobackup system
+│   ├── auth_utils.py           # Authentication utilities
+│   ├── ai_blog_service.py      # AI-powered blog generation
+│   ├── stripe_service.py       # Payment integration
+│   ├── requirements.txt        # Python dependencies
+│   └── blog.db                 # SQLite database (auto-created)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── App.tsx        # Main application
-│   │   └── config.ts      # Configuration
-│   ├── package.json       # Node.js dependencies
-│   └── dist/              # Built files (after npm run build)
-├── Dockerfile.simple      # Docker configuration
-└── README.md              # This file
+│   │   ├── components/         # React components
+│   │   │   ├── ProfilePage.tsx    # User profile page
+│   │   │   ├── EnhancedAuth.tsx   # OAuth login UI
+│   │   │   ├── AdminDashboard.tsx # Admin panel
+│   │   │   └── ...
+│   │   ├── App.tsx             # Main application
+│   │   └── config.ts           # Configuration
+│   ├── package.json            # Node.js dependencies
+│   └── dist/                   # Built files (after npm run build)
+├── Dockerfile.simple           # Docker configuration
+└── README.md                   # This file
 ```
 
 ### Database Schema
