@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { ExternalLink, Star, GitBranch, Shield, Zap, Search } from 'lucide-react';
 import { generateThumbnail, getTechIcon } from '../utils/thumbnails';
 
@@ -43,10 +42,10 @@ const ToolsPage: React.FC = () => {
   };
 
   const categories = ['All', ...Array.from(new Set(tools.map(tool => tool.category)))];
-  
+
   const filteredTools = tools.filter(tool => {
     const matchesSearch = tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         tool.description.toLowerCase().includes(searchTerm.toLowerCase());
+      tool.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || tool.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -87,7 +86,7 @@ const ToolsPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-6 text-center">
           <h1 className="text-5xl font-bold mb-6">DevOps Tools Arsenal</h1>
           <p className="text-xl mb-8 max-w-3xl mx-auto opacity-90">
-            Comprehensive collection of {tools.length} production-ready DevOps tools for modern infrastructure, 
+            Comprehensive collection of {tools.length} production-ready DevOps tools for modern infrastructure,
             CI/CD, monitoring, security, and cloud-native development.
           </p>
           <div className="flex justify-center space-x-6 text-sm">
@@ -120,17 +119,16 @@ const ToolsPage: React.FC = () => {
               className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          
+
           <div className="flex flex-wrap gap-2">
             {categories.map(category => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                  selectedCategory === category
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedCategory === category
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-100'
-                }`}
+                  }`}
               >
                 {category}
               </button>
@@ -144,8 +142,8 @@ const ToolsPage: React.FC = () => {
             <div key={tool.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
               {/* Thumbnail */}
               <div className="relative h-48 overflow-hidden">
-                <img 
-                  src={generateThumbnail(tool.name)} 
+                <img
+                  src={generateThumbnail(tool.name)}
                   alt={tool.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />

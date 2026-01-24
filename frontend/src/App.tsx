@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Search, Star, User, LogOut, Settings, CreditCard } from 'lucide-react';
+import { Star, User, LogOut, CreditCard } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
 import EnhancedComparison from './components/EnhancedComparison';

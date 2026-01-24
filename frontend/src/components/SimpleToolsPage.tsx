@@ -11,11 +11,11 @@ const SimpleToolsPage: React.FC = () => {
         console.log('Fetching tools...');
         const response = await fetch('http://localhost:8000/api/tools');
         console.log('Response status:', response.status);
-        
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
-        
+
         const data = await response.json();
         console.log('Tools received:', data.length);
         setTools(data);
@@ -47,7 +47,7 @@ const SimpleToolsPage: React.FC = () => {
   }
 
   return (
-    <div style={{ 
+    <div style={{
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       padding: '20px'
@@ -60,16 +60,16 @@ const SimpleToolsPage: React.FC = () => {
           marginBottom: '40px',
           padding: '40px 20px'
         }}>
-          <h1 style={{ 
-            fontSize: '3.5rem', 
-            fontWeight: 'bold', 
+          <h1 style={{
+            fontSize: '3.5rem',
+            fontWeight: 'bold',
             marginBottom: '20px',
             textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
           }}>
             🚀 DevOps Arsenal
           </h1>
-          <p style={{ 
-            fontSize: '1.2rem', 
+          <p style={{
+            fontSize: '1.2rem',
             opacity: 0.9,
             maxWidth: '600px',
             margin: '0 auto'
@@ -79,13 +79,13 @@ const SimpleToolsPage: React.FC = () => {
         </div>
 
         {/* Tools Grid */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', 
-          gap: '25px' 
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+          gap: '25px'
         }}>
           {tools.map((tool) => {
-            const colors = {
+            const colors: Record<string, { bg: string; icon: string }> = {
               'Container': { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', icon: '🐳' },
               'Container Orchestration': { bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', icon: '☸️' },
               'CI/CD': { bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', icon: '🔄' },
@@ -106,10 +106,10 @@ const SimpleToolsPage: React.FC = () => {
             };
 
             const categoryStyle = colors[tool.category] || colors['Container'];
-            
+
             return (
-              <div key={tool.id} 
-                style={{ 
+              <div key={tool.id}
+                style={{
                   background: 'white',
                   borderRadius: '20px',
                   overflow: 'hidden',
@@ -132,7 +132,7 @@ const SimpleToolsPage: React.FC = () => {
                   e.currentTarget.style.transform = 'translateY(0) scale(1)';
                   e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.1)';
                 }}>
-                
+
                 {/* Header with gradient */}
                 <div style={{
                   background: categoryStyle.bg,
@@ -140,16 +140,16 @@ const SimpleToolsPage: React.FC = () => {
                   color: 'white',
                   position: 'relative'
                 }}>
-                  <div style={{ 
-                    fontSize: '2.5rem', 
-                    position: 'absolute', 
-                    top: '15px', 
+                  <div style={{
+                    fontSize: '2.5rem',
+                    position: 'absolute',
+                    top: '15px',
                     right: '20px',
                     opacity: 0.7
                   }}>
                     {categoryStyle.icon}
                   </div>
-                  
+
                   {/* Click indicator */}
                   <div style={{
                     position: 'absolute',
@@ -163,45 +163,45 @@ const SimpleToolsPage: React.FC = () => {
                   }}>
                     👆 Click to visit
                   </div>
-                  
-                  <h3 style={{ 
-                    fontSize: '1.5rem', 
-                    fontWeight: 'bold', 
+
+                  <h3 style={{
+                    fontSize: '1.5rem',
+                    fontWeight: 'bold',
                     marginBottom: '8px',
                     marginTop: '15px',
                     textShadow: '1px 1px 2px rgba(0,0,0,0.2)'
                   }}>
                     {tool.name}
                   </h3>
-                  
-                  <div style={{ 
-                    fontSize: '0.9rem', 
+
+                  <div style={{
+                    fontSize: '0.9rem',
                     opacity: 0.9,
                     marginBottom: '10px'
                   }}>
                     {tool.category}
                   </div>
-                  
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '15px' 
+
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '15px'
                   }}>
-                    <span style={{ 
-                      background: 'rgba(255,255,255,0.2)', 
-                      padding: '4px 12px', 
-                      borderRadius: '20px', 
+                    <span style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
                       fontSize: '0.8rem',
                       fontWeight: '600'
                     }}>
                       ⭐ {tool.github_stars?.toLocaleString()}
                     </span>
-                    
-                    <span style={{ 
-                      background: tool.pricing_model === 'free' ? '#00b894' : 
-                                 tool.pricing_model === 'freemium' ? '#0984e3' : '#6c5ce7',
-                      padding: '4px 12px', 
-                      borderRadius: '20px', 
+
+                    <span style={{
+                      background: tool.pricing_model === 'free' ? '#00b894' :
+                        tool.pricing_model === 'freemium' ? '#0984e3' : '#6c5ce7',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
                       fontSize: '0.8rem',
                       fontWeight: '600',
                       textTransform: 'uppercase'
@@ -213,19 +213,19 @@ const SimpleToolsPage: React.FC = () => {
 
                 {/* Content */}
                 <div style={{ padding: '25px' }}>
-                  <p style={{ 
-                    color: '#666', 
-                    lineHeight: '1.6', 
+                  <p style={{
+                    color: '#666',
+                    lineHeight: '1.6',
                     marginBottom: '20px',
                     fontSize: '0.95rem'
                   }}>
                     {tool.ai_summary || tool.description?.substring(0, 120)}...
                   </p>
-                  
-                  <div style={{ 
-                    display: 'flex', 
-                    gap: '10px', 
-                    flexWrap: 'wrap' 
+
+                  <div style={{
+                    display: 'flex',
+                    gap: '10px',
+                    flexWrap: 'wrap'
                   }}>
                     {tool.homepage_url && (
                       <a
@@ -251,7 +251,7 @@ const SimpleToolsPage: React.FC = () => {
                         🌐 Website
                       </a>
                     )}
-                    
+
                     {tool.github_url && (
                       <a
                         href={tool.github_url}
@@ -294,10 +294,10 @@ const SimpleToolsPage: React.FC = () => {
           color: 'white'
         }}>
           <h2 style={{ fontSize: '2rem', marginBottom: '20px' }}>🎯 Platform Statistics</h2>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '20px' 
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '20px'
           }}>
             <div>
               <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#ffeaa7' }}>{tools.length}</div>

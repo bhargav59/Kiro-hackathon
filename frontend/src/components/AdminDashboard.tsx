@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-    Plus, Trash2, Edit, RefreshCw, Github, Sparkles,
+    Trash2, Edit, RefreshCw, Github, Sparkles,
     TrendingUp, FileText, Settings, AlertCircle, CheckCircle,
     Loader2, ExternalLink, Star, GitFork, BookOpen
 } from 'lucide-react';
@@ -283,8 +283,8 @@ const AdminDashboard: React.FC = () => {
                         {/* AI Status Badge */}
                         {aiStatus && (
                             <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${aiStatus.configured
-                                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                    : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
                                 }`}>
                                 <Sparkles className="w-4 h-4" />
                                 <span className="text-sm font-medium">
@@ -302,8 +302,8 @@ const AdminDashboard: React.FC = () => {
                     <button
                         onClick={() => setActiveTab('blogs')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${activeTab === 'blogs'
-                                ? 'bg-purple-600 text-white'
-                                : 'text-gray-400 hover:text-white hover:bg-white/10'
+                            ? 'bg-purple-600 text-white'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <FileText className="w-4 h-4" />
@@ -312,8 +312,8 @@ const AdminDashboard: React.FC = () => {
                     <button
                         onClick={() => setActiveTab('generate')}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${activeTab === 'generate'
-                                ? 'bg-purple-600 text-white'
-                                : 'text-gray-400 hover:text-white hover:bg-white/10'
+                            ? 'bg-purple-600 text-white'
+                            : 'text-gray-400 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         <Sparkles className="w-4 h-4" />

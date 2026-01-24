@@ -1,5 +1,5 @@
 // Utility to generate thumbnails based on content
-export const generateThumbnail = (title: string, category?: string) => {
+export const generateThumbnail = (title: string) => {
   const colors = {
     'Docker': { primary: '#2496ED', secondary: '#1E88E5', accent: '#0D47A1' },
     'Kubernetes': { primary: '#326CE5', secondary: '#1976D2', accent: '#0D47A1' },
@@ -74,7 +74,7 @@ export const generateThumbnail = (title: string, category?: string) => {
   const colorScheme = getColorScheme(title);
   const pattern = getPattern(title);
   const initials = title.split(' ').slice(0, 2).map(word => word[0]).join('').toUpperCase();
-  
+
   const svg = `
     <svg width="400" height="250" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -126,7 +126,7 @@ export const generateThumbnail = (title: string, category?: string) => {
       <circle cx="350" cy="200" r="10" fill="rgba(255,255,255,0.1)" opacity="0.7"/>
     </svg>
   `;
-  
+
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 };
 
