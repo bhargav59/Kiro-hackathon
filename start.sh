@@ -29,15 +29,16 @@ source venv/bin/activate
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip install -r requirements.txt
+pip install -r requirements_simple.txt
 
 # Seed database
-echo "Seeding database with sample data..."
-python seed_data.py
+echo "Seeding database with professional blog content..."
+python seed_professional_blogs.py 2>/dev/null || echo "Blog data already exists"
+python seed_remaining_blogs.py 2>/dev/null || echo "Blog data already exists"
 
 # Start backend in background
 echo "🔧 Starting FastAPI backend on http://localhost:8000..."
-python main.py &
+python blog_main.py &
 BACKEND_PID=$!
 
 # Setup frontend

@@ -98,6 +98,16 @@ class ReviewVote(Base):
     id = Column(Integer, primary_key=True, index=True)
     review_id = Column(Integer, ForeignKey("reviews.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
+
+class Blog(Base):
+    __tablename__ = "blogs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    content = Column(Text)
+    author = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
     is_helpful = Column(Boolean)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -1634,6 +1644,22 @@ async def enhance_single_tool(tool_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Could not enhance tool")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
+
+# Blog endpoints
+@app.get("/api/blogs")
+async def get_blogs(db: Session = Depends(get_db)):
+    """Get all blogs"""
+    blogs = db.query(Blog).order_by(Blog.created_at.desc()).all()
+    return blogs
+
+@app.post("/api/blogs")
+async def create_blog(title: str, content: str, author: str, db: Session = Depends(get_db)):
+    """Create a new blog"""
+    blog = Blog(title=title, content=content, author=author)
+    db.add(blog)
+    db.commit()
+    db.refresh(blog)
+    return blog
 
 if __name__ == "__main__":
     import uvicorn

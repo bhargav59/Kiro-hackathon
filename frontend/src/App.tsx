@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Search, Star, User, LogOut, Settings } from 'lucide-react';
+import { Search, Star, User, LogOut, Settings, CreditCard } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
 import EnhancedComparison from './components/EnhancedComparison';
@@ -8,6 +8,14 @@ import DiscoverPage from './components/DiscoverPage';
 import EnhancedToolDetailPage from './components/EnhancedToolDetailPage';
 import EnhancedAuth from './components/EnhancedAuth';
 import AdminPage from './components/AdminPage';
+import AdminDashboard from './components/AdminDashboard';
+import BlogDetailPage from './components/BlogDetailPage';
+import SimpleToolsPage from './components/SimpleToolsPage';
+import TestPage from './components/TestPage';
+// Payment components
+import PricingPage from './components/PricingPage';
+import SubscriptionManager from './components/SubscriptionManager';
+import CheckoutSuccess from './components/CheckoutSuccess';
 
 // API Base URL
 import { API_BASE } from './config';
@@ -49,9 +57,9 @@ const AuthContext = React.createContext<{
 }>({
   user: null,
   token: null,
-  login: async () => {},
-  register: async () => {},
-  logout: () => {}
+  login: async () => { },
+  register: async () => { },
+  logout: () => { }
 });
 
 // Auth Provider
@@ -85,7 +93,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    
+
     if (response.ok) {
       const data = await response.json();
       localStorage.setItem('token', data.access_token);
@@ -101,7 +109,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, username, password })
     });
-    
+
     if (!response.ok) {
       throw new Error('Registration failed');
     }
@@ -129,21 +137,23 @@ const Header: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <Link to="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">CE</span>
-            </div>
             <div className="flex items-center">
-              <img src="/logo.png" alt="Logo" className="h-8" />
+              <img src="/logo.png" alt="Logo" className="h-12" />
             </div>
           </Link>
-          
+
           <nav className="flex items-center space-x-6">
             <Link to="/tools" className="text-gray-700 hover:text-blue-600">Tools</Link>
+            <Link to="/admin" className="text-gray-700 hover:text-blue-600">Blogs</Link>
             <Link to="/discover" className="text-gray-700 hover:text-blue-600">Discover</Link>
             <Link to="/compare" className="text-gray-700 hover:text-blue-600">Compare</Link>
             <Link to="/ai-search" className="text-gray-700 hover:text-blue-600">🤖 AI Search</Link>
             <Link to="/analytics" className="text-gray-700 hover:text-blue-600">📊 Analytics</Link>
-            
+            <Link to="/pricing" className="text-gray-700 hover:text-blue-600 flex items-center gap-1">
+              <CreditCard size={16} />
+              Pricing
+            </Link>
+
             {user ? (
               <div className="flex items-center space-x-4">
                 <Link to="/profile" className="text-gray-700 hover:text-blue-600">Profile</Link>
@@ -183,9 +193,9 @@ const ToolCard: React.FC<{ tool: Tool }> = ({ tool }) => {
           <span className="ml-1 text-sm text-gray-600">{tool.github_stars}</span>
         </div>
       </div>
-      
+
       <p className="text-gray-600 mb-4 line-clamp-3">{tool.description}</p>
-      
+
       <div className="flex items-center justify-between">
         <span className="text-sm text-gray-500 capitalize">{tool.pricing_model}</span>
         <Link
@@ -258,73 +268,6 @@ const HomePage: React.FC = () => {
   );
 };
 
-// Tools Page
-const ToolsPage: React.FC = () => {
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-
-  useEffect(() => {
-    fetchTools();
-  }, [search, category]);
-
-  const fetchTools = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (search) params.append('search', search);
-      if (category) params.append('category', category);
-      
-      const response = await fetch(`${API_BASE}/api/tools?${params}`);
-      const toolsData = await response.json();
-      setTools(toolsData);
-    } catch (error) {
-      console.error('Failed to fetch tools:', error);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-            <div className="flex-1 max-w-lg">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search tools..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Categories</option>
-              <option value="CI/CD">CI/CD</option>
-              <option value="Monitoring">Monitoring</option>
-              <option value="Containerization">Containerization</option>
-              <option value="Orchestration">Orchestration</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tools.map((tool) => (
-            <ToolCard key={tool.id} tool={tool} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
 // Profile Page
 const ProfilePage: React.FC = () => {
   const { user } = React.useContext(AuthContext);
@@ -370,16 +313,24 @@ const App: React.FC = () => {
           <Header />
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/tools" element={<ToolsPage />} />
+            <Route path="/tools" element={<SimpleToolsPage />} />
             <Route path="/tools/:slug" element={<EnhancedToolDetailPage />} />
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/compare" element={<EnhancedComparison />} />
             <Route path="/ai-search" element={<NaturalLanguageQuery />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
-            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/blog/:id" element={<BlogDetailPage />} />
+            <Route path="/test" element={<TestPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/login" element={<EnhancedAuth />} />
             <Route path="/register" element={<EnhancedAuth />} />
+            {/* Payment Routes */}
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/subscription" element={<SubscriptionManager />} />
+            <Route path="/checkout/success" element={<CheckoutSuccess />} />
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/blogs" element={<AdminPage />} />
           </Routes>
         </div>
       </Router>

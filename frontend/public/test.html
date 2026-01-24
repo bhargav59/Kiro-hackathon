@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Blog Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .blog { border: 1px solid #ccc; margin: 10px 0; padding: 15px; }
+        .loading { color: blue; }
+        .error { color: red; background: #ffe6e6; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Direct Blog API Test</h1>
+    <div id="status">Loading...</div>
+    <div id="content"></div>
+
+    <script>
+        async function loadBlogs() {
+            const statusDiv = document.getElementById('status');
+            const contentDiv = document.getElementById('content');
+            
+            try {
+                statusDiv.innerHTML = 'Fetching blogs...';
+                console.log('Fetching from: http://localhost:8000/api/blogs');
+                
+                const response = await fetch('http://localhost:8000/api/blogs');
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const blogs = await response.json();
+                console.log('Blogs received:', blogs.length);
+                
+                statusDiv.innerHTML = `✅ Success! Found ${blogs.length} blogs`;
+                
+                contentDiv.innerHTML = blogs.map(blog => `
+                    <div class="blog">
+                        <h3>${blog.title}</h3>
+                        <p><strong>Author:</strong> ${blog.author}</p>
+                        <p><strong>Created:</strong> ${new Date(blog.created_at).toLocaleDateString()}</p>
+                        <p><strong>Content:</strong> ${blog.content.substring(0, 200)}...</p>
+                        <p><strong>Length:</strong> ${blog.content.length} characters</p>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.innerHTML = `❌ Error: ${error.message}`;
+                contentDiv.innerHTML = `<div class="error">Failed to load blogs: ${error.message}</div>`;
+            }
+        }
+        
+        // Load blogs when page loads
+        loadBlogs();
+    </script>
+</body>
+</html>
