@@ -12,3 +12,4 @@ aiohttp==3.9.5
 google-generativeai==0.3.2
 
 stripe>=7.0.0
+mangum>=0.17.0
