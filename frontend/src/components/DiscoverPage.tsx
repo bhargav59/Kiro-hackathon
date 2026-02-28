@@ -1,56 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Search, Star, Users } from 'lucide-react';
 
 import { API_BASE } from '../config';
+import { Tool } from '../types';
 
-interface Tool {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  category: string;
-  license: string;
-  pricing_model: string;
-  github_stars: number;
-  github_forks: number;
-  ai_summary: string;
-  homepage_url: string;
-  github_url: string;
-}
+const fetchTools = async (): Promise<Tool[]> => {
+  const response = await fetch(`${API_BASE}/api/tools`);
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  return response.json();
+};
 
 const DiscoverPage: React.FC = () => {
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [filteredTools, setFilteredTools] = useState<Tool[]>([]);
+  const { data: tools = [], isLoading: loading, isError, error } = useQuery({
+    queryKey: ['tools'],
+    queryFn: fetchTools,
+  });
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedPricing, setSelectedPricing] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
-  const [loading, setLoading] = useState(true);
 
   const categories = ['all', 'Container', 'Infrastructure', 'CI/CD', 'Monitoring'];
   const pricingModels = ['all', 'free', 'freemium', 'paid'];
 
-  useEffect(() => {
-    fetchTools();
-  }, []);
-
-  useEffect(() => {
-    filterAndSortTools();
-  }, [tools, searchTerm, selectedCategory, selectedPricing, sortBy]);
-
-  const fetchTools = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/tools`);
-      const data = await response.json();
-      setTools(data);
-    } catch (error) {
-      console.error('Error fetching tools:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterAndSortTools = () => {
+  const filteredTools = useMemo(() => {
     let filtered = tools.filter(tool => {
       const matchesSearch = tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            tool.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -74,8 +52,8 @@ const DiscoverPage: React.FC = () => {
       }
     });
 
-    setFilteredTools(filtered);
-  };
+    return filtered;
+  }, [tools, searchTerm, selectedCategory, selectedPricing, sortBy]);
 
   const getPricingColor = (pricing: string) => {
     switch (pricing) {
@@ -100,6 +78,17 @@ const DiscoverPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center text-red-600">
+          <h2 className="text-xl font-semibold">Error Loading Tools</h2>
+          <p className="mt-2">{error instanceof Error ? error.message : 'Unknown error'}</p>
+        </div>
       </div>
     );
   }
@@ -235,12 +224,12 @@ const DiscoverPage: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="flex space-x-3">
-                <a
-                  href={`/tools/${tool.slug}`}
+                <Link
+                  to={`/tools/${tool.slug}`}
                   className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-4 rounded-xl font-semibold text-center hover:from-blue-700 hover:to-purple-700 transition-all duration-200"
                 >
                   View Details
-                </a>
+                </Link>
                 <a
                   href={tool.homepage_url}
                   target="_blank"

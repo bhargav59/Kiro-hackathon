@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { Star, User, LogOut, CreditCard } from 'lucide-react';
+import { Star, LogOut, CreditCard } from 'lucide-react';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import NaturalLanguageQuery from './components/NaturalLanguageQuery';
 import EnhancedComparison from './components/EnhancedComparison';
@@ -22,31 +22,7 @@ import CheckoutSuccess from './components/CheckoutSuccess';
 import { API_BASE } from './config';
 
 // Types
-interface Tool {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  homepage_url?: string;
-  github_url?: string;
-  category: string;
-  license?: string;
-  pricing_model: string;
-  github_stars: number;
-  github_forks: number;
-  ai_summary?: string;
-  created_at: string;
-}
-
-interface User {
-  id: number;
-  email: string;
-  username: string;
-  avatar_url?: string;
-  bio?: string;
-  created_at: string;
-}
-
+import { Tool, User } from './types';
 
 // Auth Context
 const AuthContext = React.createContext<{

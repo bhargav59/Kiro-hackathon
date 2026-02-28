@@ -9,12 +9,23 @@ if [ ! -f "README.md" ] || [ ! -d "backend" ] || [ ! -d "frontend" ]; then
     exit 1
 fi
 
+# Setup Python virtual environment
+echo "📦 Setting up Python environment..."
+cd backend
+if [ ! -d "venv" ]; then
+    echo "Creating Python virtual environment..."
+    python3 -m venv venv
+fi
+./venv/bin/pip install --upgrade pip -q
+./venv/bin/pip install -r requirements.txt -q
+cd ..
+
 # Initialize database if it doesn't exist
 if [ ! -f "backend/cloudengineered.db" ]; then
     echo "🗄️  Initializing database..."
     cd backend
-    python3 init_db.py
-    python3 simple_seed.py
+    ./venv/bin/python init_db.py
+    ./venv/bin/python simple_seed.py
     cd ..
 fi
 
@@ -28,7 +39,7 @@ cd ..
 # Start backend server
 echo "🔧 Starting backend server..."
 cd backend
-python3 main.py &
+./venv/bin/python main.py &
 BACKEND_PID=$!
 cd ..
 

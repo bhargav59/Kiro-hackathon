@@ -29,20 +29,37 @@ const EnhancedAuth: React.FC = () => {
   useEffect(() => {
     fetchProviders();
 
-    // Handle OAuth callback
-    const token = searchParams.get('token');
-    const user = searchParams.get('user');
+    // Handle OAuth callback - exchange auth code for token
+    const code = searchParams.get('code');
     const errorMessage = searchParams.get('message');
 
-    if (token && user) {
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', user);
-      setSuccess(`Welcome back, ${user}!`);
-      setTimeout(() => navigate('/'), 2000);
+    if (code) {
+      exchangeAuthCode(code);
     } else if (errorMessage) {
       setError(errorMessage);
     }
   }, [searchParams, navigate]);
+
+  const exchangeAuthCode = async (code: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/exchange-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('user', data.username);
+        setSuccess(`Welcome back, ${data.username}!`);
+        setTimeout(() => navigate('/'), 2000);
+      } else {
+        setError(data.detail || 'Authentication failed');
+      }
+    } catch {
+      setError('Failed to complete authentication');
+    }
+  };
 
   const fetchProviders = async () => {
     try {
@@ -81,7 +98,18 @@ const EnhancedAuth: React.FC = () => {
       if (response.ok) {
         if (isLogin) {
           localStorage.setItem('token', data.access_token);
-          localStorage.setItem('user', data.user.username);
+          // Fetch user profile to get username
+          try {
+            const profileResp = await fetch(`${API_BASE}/api/users/me`, {
+              headers: { 'Authorization': `Bearer ${data.access_token}` }
+            });
+            if (profileResp.ok) {
+              const profile = await profileResp.json();
+              localStorage.setItem('user', profile.username);
+            }
+          } catch {
+            // Profile fetch failed, continue without username
+          }
           setSuccess('Login successful!');
           setTimeout(() => navigate('/'), 1500);
         } else {
@@ -99,16 +127,9 @@ const EnhancedAuth: React.FC = () => {
     }
   };
 
-  const handleOAuthLogin = async (provider: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/auth/oauth/${provider}/authorize`);
-      const data = await response.json();
-      if (data.authorization_url) {
-        window.location.href = data.authorization_url;
-      }
-    } catch (error) {
-      setError(`Failed to connect with ${provider}`);
-    }
+  const handleOAuthLogin = (provider: string) => {
+    // Navigate directly to the backend OAuth endpoint which handles the redirect
+    window.location.href = `${API_BASE}/api/auth/${provider}`;
   };
 
   const getProviderIcon = (provider: string) => {

@@ -1,14 +1,15 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from fastapi.responses import RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import RedirectResponse, JSONResponse
 import httpx
 from oauth_config import oauth, get_oauth_providers
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, func
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, func, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 import requests
 import json
 from datetime import datetime, timedelta
@@ -16,11 +17,16 @@ from typing import List, Optional
 import jwt
 import bcrypt
 import os
+import secrets
+import logging
 from contextlib import contextmanager
 import asyncio
 import aiohttp
 import google.generativeai as genai
 from tool_knowledge import TOOL_KNOWLEDGE, get_tool_data, calculate_roi
+from auth_utils import get_secret_key, validate_password_strength, login_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 # Database setup
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")  # Fallback to in-memory if no Supabase URL
@@ -62,6 +68,7 @@ class User(Base):
     oauth_provider = Column(String, nullable=True)  # 'google', 'github', or None
     avatar_url = Column(String)
     bio = Column(Text)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     reviews = relationship("Review", back_populates="user")
@@ -98,6 +105,7 @@ class ReviewVote(Base):
     id = Column(Integer, primary_key=True, index=True)
     review_id = Column(Integer, ForeignKey("reviews.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
+    is_helpful = Column(Boolean, default=True)
 
 class Blog(Base):
     __tablename__ = "blogs"
@@ -108,8 +116,6 @@ class Blog(Base):
     author = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
-    is_helpful = Column(Boolean)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 # Pydantic models
 class ToolCreate(BaseModel):
@@ -156,8 +162,8 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 class ReviewCreate(BaseModel):
-    rating: int
-    content: str
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
+    content: str = Field(..., min_length=1, max_length=5000)
 
 class ReviewResponse(BaseModel):
     id: int
@@ -185,6 +191,11 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class BlogCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1)
+    author: str = Field(..., min_length=1, max_length=200)
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -195,24 +206,51 @@ Base.metadata.create_all(bind=engine)
 # FastAPI app
 app = FastAPI(title="CloudEngineered API", version="1.0.0")
 
-# Add session middleware for OAuth
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY", "your-secret-key-here"))
+# Add session middleware for OAuth - require SECRET_KEY in production
+_session_secret = os.getenv("SECRET_KEY")
+if not _session_secret:
+    if os.getenv("ENV", "development") == "production":
+        raise RuntimeError("SECRET_KEY environment variable is required in production")
+    _session_secret = secrets.token_urlsafe(32)
+    logger.warning("SECRET_KEY not set - using random key (sessions won't persist across restarts)")
+app.add_middleware(SessionMiddleware, secret_key=_session_secret)
+
+# CORS configuration - restrict origins (set CORS_ORIGINS env var in production)
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
+        if os.getenv("ENV") == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Security
 security = HTTPBearer()
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "your-gemini-api-key")
+SECRET_KEY = get_secret_key()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 # Configure Gemini AI
-if GEMINI_API_KEY and GEMINI_API_KEY != "your-gemini-api-key":
+if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 def get_db():
@@ -222,25 +260,43 @@ def get_db():
     finally:
         db.close()
 
+# In-memory store for OAuth auth codes (short-lived, exchanged for tokens)
+_pending_auth_codes: dict = {}
+
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(hours=24)
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "iss": "cloudengineered",
+        "aud": "cloudengineered-api",
+    })
     return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        payload = jwt.decode(
+            credentials.credentials, SECRET_KEY, algorithms=["HS256"],
+            audience="cloudengineered-api", issuer="cloudengineered",
+            options={"verify_sub": False}
+        )
+        user_id_raw = payload.get("sub")
+        if user_id_raw is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-    except jwt.PyJWTError:
+        user_id = int(user_id_raw)
+    except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token")
     
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+def get_admin_user(current_user: User = Depends(get_current_user)):
+    """Require admin role for admin endpoints"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
 
 def create_slug(name: str) -> str:
     return name.lower().replace(" ", "-").replace(".", "").replace("/", "-")
@@ -269,13 +325,13 @@ async def fetch_github_stats(github_url: str) -> dict:
                         "last_commit": data.get("updated_at")
                     }
     except Exception as e:
-        print(f"Error fetching GitHub stats: {e}")
+        logger.error(f"Error fetching GitHub stats: {e}")
     
     return {"stars": 0, "forks": 0, "last_commit": None}
 
 async def generate_ai_comparison(tools: List[Tool]) -> dict:
     """Generate AI-powered tool comparison using Gemini"""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your-gemini-api-key":
+    if not GEMINI_API_KEY:
         # Fallback to mock comparison
         return generate_mock_comparison(tools)
     
@@ -347,7 +403,7 @@ Focus on practical differences, performance, learning curve, and ecosystem.
             }
             
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        logger.error(f"Gemini API error: {e}")
         return generate_mock_comparison(tools)
 
 def generate_mock_comparison(tools: List[Tool]) -> dict:
@@ -370,6 +426,25 @@ def generate_ai_summary(tool_name: str, description: str, category: str) -> str:
     base_summary = summaries.get(category, f"{tool_name} is a powerful tool in the {category} category.")
     return f"{base_summary} {description[:100]}..."
 
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"}
+    )
+
+# Health check
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint for container orchestration"""
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
 # Routes
 @app.get("/")
 def read_root():
@@ -387,7 +462,7 @@ async def oauth_login(provider: str, request: Request):
         raise HTTPException(status_code=400, detail="Unsupported provider")
     
     client = oauth.create_client(provider)
-    redirect_uri = f"http://localhost:8000/api/auth/{provider}/callback"
+    redirect_uri = f"{BACKEND_URL}/api/auth/{provider}/callback"
     return await client.authorize_redirect(request, redirect_uri)
 
 @app.get("/api/auth/{provider}/callback")
@@ -453,61 +528,54 @@ async def oauth_callback(provider: str, request: Request, db: Session = Depends(
                 db.commit()
         
         # Create JWT token
-        access_token = create_access_token({"sub": user.id})
-        
-        # Redirect to frontend with token
+        access_token = create_access_token({"sub": str(user.id)})
+
+        # Use a short-lived auth code instead of passing JWT directly in URL
+        # The frontend will exchange this code for the token via a POST request
+        auth_code = secrets.token_urlsafe(32)
+        _pending_auth_codes[auth_code] = {
+            "token": access_token,
+            "username": user.username,
+            "expires": datetime.utcnow() + timedelta(minutes=5)
+        }
+
+        # Redirect to frontend with auth code (not the JWT itself)
         return RedirectResponse(
-            url=f"http://localhost:3000/auth/callback?token={access_token}&user={user.username}",
-            status_code=302
-        )
-        
-    except Exception as e:
-        print(f"OAuth error: {e}")
-        return RedirectResponse(
-            url="http://localhost:3000/auth/error?message=Authentication failed",
+            url=f"{FRONTEND_URL}/auth/callback?code={auth_code}",
             status_code=302
         )
 
-@app.post("/api/auth/github")
-def github_auth(github_data: dict, db: Session = Depends(get_db)):
-    """GitHub OAuth authentication"""
-    try:
-        github_id = str(github_data.get('id'))
-        email = github_data.get('email')
-        username = github_data.get('login')
-        avatar_url = github_data.get('avatar_url')
-        
-        if not github_id or not email:
-            raise HTTPException(status_code=400, detail="Invalid GitHub data")
-        
-        # Check if user exists
-        user = db.query(User).filter(User.github_id == github_id).first()
-        
-        if not user:
-            # Create new user
-            user = User(
-                email=email,
-                username=username,
-                github_id=github_id,
-                avatar_url=avatar_url
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        else:
-            # Update existing user
-            user.avatar_url = avatar_url
-            db.commit()
-        
-        # Create access token
-        access_token = create_access_token(data={"sub": user.id})
-        return {"access_token": access_token, "token_type": "bearer", "user": user}
-        
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"GitHub authentication failed: {str(e)}")
+        logger.error(f"OAuth error: {e}", exc_info=True)
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/auth/error?message=Authentication failed",
+            status_code=302
+        )
+
+@app.post("/api/auth/exchange-code")
+def exchange_auth_code(code_data: dict):
+    """Exchange short-lived OAuth auth code for JWT token"""
+    code = code_data.get("code", "")
+    if not code or code not in _pending_auth_codes:
+        raise HTTPException(status_code=400, detail="Invalid or expired auth code")
+
+    entry = _pending_auth_codes.pop(code)
+    if datetime.utcnow() > entry["expires"]:
+        raise HTTPException(status_code=400, detail="Auth code expired")
+
+    return {
+        "access_token": entry["token"],
+        "token_type": "bearer",
+        "username": entry["username"]
+    }
 
 @app.post("/api/auth/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
+    # Validate password strength
+    is_valid, error_msg = validate_password_strength(user.password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
     # Check if user exists
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -530,12 +598,27 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 @app.post("/api/auth/login", response_model=Token)
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    is_limited, reset_in = login_rate_limiter.is_rate_limited(client_ip)
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {reset_in} seconds."
+        )
+    login_rate_limiter.record_attempt(client_ip)
+    
     user = db.query(User).filter(User.email == login_data.email).first()
-    if not user or not bcrypt.checkpw(login_data.password.encode('utf-8'), user.password_hash.encode('utf-8')):
+    if not user or not user.password_hash:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not bcrypt.checkpw(login_data.password.encode('utf-8'), user.password_hash.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    access_token = create_access_token(data={"sub": user.id})
+    # Reset rate limiter on successful login
+    login_rate_limiter.reset(client_ip)
+    
+    access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/api/tools", response_model=List[ToolResponse])
@@ -586,7 +669,7 @@ def create_review(tool_id: int, review: ReviewCreate, current_user: User = Depen
     return db_review
 
 @app.post("/api/tools", response_model=ToolResponse)
-async def create_tool(tool: ToolCreate, db: Session = Depends(get_db)):
+async def create_tool(tool: ToolCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     slug = create_slug(tool.name)
     
     # Check if tool exists
@@ -619,11 +702,6 @@ async def create_tool(tool: ToolCreate, db: Session = Depends(get_db)):
     
     return db_tool
 
-@app.get("/api/tools/{tool_id}/reviews", response_model=List[ReviewResponse])
-def get_tool_reviews(tool_id: int, db: Session = Depends(get_db)):
-    reviews = db.query(Review).filter(Review.tool_id == tool_id).all()
-    return reviews
-
 @app.get("/api/users/me", response_model=UserResponse)
 def get_current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
@@ -650,38 +728,36 @@ async def compare_tools(request: CompareRequest, db: Session = Depends(get_db)):
             "side_by_side": [
                 {
                     "name": tool.name,
-                "stars": tool.github_stars,
-                "license": tool.license,
-                "pricing": tool.pricing_model,
-                "category": tool.category,
-                "description": tool.description[:200] + "..."
-            } for tool in tools
-        ],
-        "export_options": ["PDF", "Markdown", "JSON"],
-        "performance_metrics": {tool.name: {"popularity": tool.github_stars, "activity": "High"} for tool in tools}
-    }
+                    "stars": tool.github_stars,
+                    "license": tool.license,
+                    "pricing": tool.pricing_model,
+                    "category": tool.category,
+                    "description": tool.description[:200] + "..."
+                } for tool in tools
+            ],
+            "export_options": ["PDF", "Markdown", "JSON"],
+            "performance_metrics": {tool.name: {"popularity": tool.github_stars, "activity": "High"} for tool in tools}
+        }
     
         return comparison
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error in compare_tools: {e}")
-        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
+        logger.error(f"Error in compare_tools: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Comparison failed")
 
-@app.get("/api/ai/recommendations/{user_id}")
-def get_ai_recommendations(user_id: int, db: Session = Depends(get_db)):
-    """Get AI-powered tool recommendations for user"""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
+@app.get("/api/ai/recommendations")
+def get_ai_recommendations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get AI-powered tool recommendations for the authenticated user"""
     # Get user's current stack
-    user_tools = db.query(UserStack).filter(UserStack.user_id == user_id).all()
+    user_tools = db.query(UserStack).filter(UserStack.user_id == current_user.id).all()
     user_categories = [tool.tool.category for tool in user_tools]
-    
+
     # Recommend complementary tools
     all_tools = db.query(Tool).all()
     recommendations = []
-    
+
     for tool in all_tools:
         if tool.category not in user_categories:
             recommendations.append({
@@ -689,11 +765,11 @@ def get_ai_recommendations(user_id: int, db: Session = Depends(get_db)):
                 "reason": f"Complements your {', '.join(user_categories)} stack",
                 "confidence": 0.8
             })
-    
+
     return {"recommendations": recommendations[:5], "based_on": "user_stack_analysis"}
 
 @app.post("/api/ai/moderate")
-def moderate_content(content: dict, db: Session = Depends(get_db)):
+def moderate_content(content: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """AI content moderation for reviews"""
     text = content.get("text", "")
     
@@ -765,38 +841,6 @@ def remove_from_stack(tool_id: int, current_user: User = Depends(get_current_use
     db.delete(stack_item)
     db.commit()
     return {"message": "Tool removed from stack"}
-
-# Review voting endpoints
-@app.post("/api/reviews/{review_id}/vote")
-def vote_review(review_id: int, is_helpful: bool, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Vote on review helpfulness"""
-    review = db.query(Review).filter(Review.id == review_id).first()
-    if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
-    
-    # Check existing vote
-    existing_vote = db.query(ReviewVote).filter(ReviewVote.review_id == review_id, ReviewVote.user_id == current_user.id).first()
-    
-    if existing_vote:
-        # Update existing vote
-        if existing_vote.is_helpful != is_helpful:
-            existing_vote.is_helpful = is_helpful
-            # Update helpful count
-            if is_helpful:
-                review.helpful_count += 2  # +1 for new helpful, +1 for removing unhelpful
-            else:
-                review.helpful_count -= 2  # -1 for removing helpful, -1 for new unhelpful
-    else:
-        # Create new vote
-        vote = ReviewVote(review_id=review_id, user_id=current_user.id, is_helpful=is_helpful)
-        db.add(vote)
-        if is_helpful:
-            review.helpful_count += 1
-        else:
-            review.helpful_count -= 1
-    
-    db.commit()
-    return {"message": "Vote recorded"}
 
 @app.put("/api/tools/{tool_id}/enhance")
 async def enhance_tool_details(tool_id: int, db: Session = Depends(get_db)):
@@ -906,18 +950,18 @@ def get_advanced_analytics(db: Session = Depends(get_db)):
     total_reviews = db.query(Review).count()
     
     # Category breakdown with percentages
-    categories = db.query(Tool.category, db.func.count(Tool.id)).group_by(Tool.category).all()
-    category_stats = {category: {"count": count, "percentage": round(count/total_tools*100, 1)} for category, count in categories}
+    categories = db.query(Tool.category, func.count(Tool.id)).group_by(Tool.category).all()
+    category_stats = {category: {"count": count, "percentage": round(count/total_tools*100, 1) if total_tools > 0 else 0} for category, count in categories}
     
     # Top tools by stars
     top_tools = db.query(Tool).order_by(Tool.github_stars.desc()).limit(5).all()
     
     # Review statistics
-    avg_rating = db.query(db.func.avg(Review.rating)).scalar() or 0
-    review_distribution = db.query(Review.rating, db.func.count(Review.id)).group_by(Review.rating).all()
+    avg_rating = db.query(func.avg(Review.rating)).scalar() or 0
+    review_distribution = db.query(Review.rating, func.count(Review.id)).group_by(Review.rating).all()
     
     # User engagement metrics
-    active_reviewers = db.query(db.func.count(db.func.distinct(Review.user_id))).scalar() or 0
+    active_reviewers = db.query(func.count(func.distinct(Review.user_id))).scalar() or 0
     avg_reviews_per_tool = total_reviews / total_tools if total_tools > 0 else 0
     
     # Growth trends (mock data for demo)
@@ -942,7 +986,7 @@ def get_advanced_analytics(db: Session = Depends(get_db)):
         "review_distribution": {str(rating): count for rating, count in review_distribution},
         "growth_trends": growth_trends,
         "insights": [
-            f"Most popular category: {max(category_stats.items(), key=lambda x: x[1]['count'])[0]}",
+            f"Most popular category: {max(category_stats.items(), key=lambda x: x[1]['count'])[0]}" if category_stats else "No tools yet - add your first tool!",
             f"Average tool rating: {round(avg_rating, 1)}/5.0",
             f"User engagement: {round(active_reviewers/total_users*100, 1)}% of users have written reviews" if total_users > 0 else "New platform - building user base"
         ]
@@ -1140,7 +1184,7 @@ def get_platform_stats(db: Session = Depends(get_db)):
     total_reviews = db.query(Review).count()
     
     # Get category breakdown
-    categories = db.query(Tool.category, db.func.count(Tool.id)).group_by(Tool.category).all()
+    categories = db.query(Tool.category, func.count(Tool.id)).group_by(Tool.category).all()
     category_stats = {category: count for category, count in categories}
     
     return {
@@ -1165,11 +1209,12 @@ async def enhanced_compare_tools(request: dict):
         try:
             return await generate_enhanced_ai_comparison(tool1, tool2)
         except Exception as ai_error:
-            print(f"AI comparison failed: {ai_error}, using knowledge base")
+            logger.warning(f"AI comparison failed: {ai_error}, using knowledge base")
             return generate_detailed_comparison(tool1, tool2)
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate comparison: {str(e)}")
+        logger.error(f"Failed to generate comparison: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate comparison")
 
 async def generate_enhanced_ai_comparison(tool1: str, tool2: str):
     """Generate comparison using AI with structured prompt"""
@@ -1542,7 +1587,7 @@ async def get_analytics_overview(db: Session = Depends(get_db)):
             ]
         }
     except Exception as e:
-        print(f"Analytics error: {e}")
+        logger.error(f"Analytics error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to load analytics")
 
 @app.get("/api/analytics/tools/{tool_id}")
@@ -1601,18 +1646,19 @@ async def get_tool_analytics(tool_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to load tool analytics")
 
 @app.post("/api/admin/enhance-tools")
-async def enhance_tools_endpoint():
-    """Enhance all tools with GitHub README data"""
+async def enhance_tools_endpoint(current_user: User = Depends(get_admin_user)):
+    """Enhance all tools with GitHub README data (requires auth)"""
     try:
         from enhance_tools import ToolEnhancer
         enhancer = ToolEnhancer()
         enhancer.enhance_all_tools()
         return {"message": "Tools enhanced successfully", "status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
+        logger.error(f"Enhancement failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Enhancement failed")
 
 @app.post("/api/admin/enhance-tool/{tool_id}")
-async def enhance_single_tool(tool_id: int, db: Session = Depends(get_db)):
+async def enhance_single_tool(tool_id: int, current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
     """Enhance a single tool with GitHub README data"""
     try:
         from enhance_tools import ToolEnhancer
@@ -1643,7 +1689,8 @@ async def enhance_single_tool(tool_id: int, db: Session = Depends(get_db)):
         
         raise HTTPException(status_code=400, detail="Could not enhance tool")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Enhancement failed: {str(e)}")
+        logger.error(f"Enhancement failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Enhancement failed")
 
 # Blog endpoints
 @app.get("/api/blogs")
@@ -1653,9 +1700,9 @@ async def get_blogs(db: Session = Depends(get_db)):
     return blogs
 
 @app.post("/api/blogs")
-async def create_blog(title: str, content: str, author: str, db: Session = Depends(get_db)):
-    """Create a new blog"""
-    blog = Blog(title=title, content=content, author=author)
+async def create_blog(blog_data: BlogCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Create a new blog (requires authentication)"""
+    blog = Blog(title=blog_data.title, content=blog_data.content, author=blog_data.author)
     db.add(blog)
     db.commit()
     db.refresh(blog)
