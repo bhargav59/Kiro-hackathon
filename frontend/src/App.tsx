@@ -20,6 +20,7 @@ import CheckoutSuccess from './components/CheckoutSuccess';
 import EmailCaptureModal from './components/EmailCaptureModal';
 import OnboardingFlow from './components/OnboardingFlow';
 import SEOComparisonPage from './components/SEOComparisonPage';
+import ComparisonListPage from './components/ComparisonListPage';
 
 // Analytics
 import { initAnalytics, identifyUser, resetUser, trackEvent } from './analytics';
@@ -138,6 +139,7 @@ const Header: React.FC = () => {
             <Link to="/admin" className="text-gray-700 hover:text-blue-600">Blogs</Link>
             <Link to="/discover" className="text-gray-700 hover:text-blue-600">Discover</Link>
             <Link to="/compare" className="text-gray-700 hover:text-blue-600">Compare</Link>
+            <Link to="/comparisons" className="text-gray-700 hover:text-blue-600">Comparisons</Link>
             <Link to="/ai-search" className="text-gray-700 hover:text-blue-600">🤖 AI Search</Link>
             <Link to="/analytics" className="text-gray-700 hover:text-blue-600">📊 Analytics</Link>
             <Link to="/pricing" className="text-gray-700 hover:text-blue-600 flex items-center gap-1">
@@ -277,6 +279,7 @@ const AppContent: React.FC = () => {
             <Route path="/tools/:slug" element={<EnhancedToolDetailPage />} />
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/compare" element={<EnhancedComparison />} />
+            <Route path="/comparisons" element={<ComparisonListPage />} />
             <Route path="/compare/:slug" element={<SEOComparisonPage />} />
             <Route path="/ai-search" element={<NaturalLanguageQuery />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />

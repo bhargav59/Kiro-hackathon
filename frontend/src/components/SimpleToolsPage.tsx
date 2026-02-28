@@ -1,4 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
+
+const getHealthGrade = (score: number) => {
+  if (score >= 90) return { grade: 'A+', color: '#00b894' };
+  if (score >= 80) return { grade: 'A', color: '#00b894' };
+  if (score >= 70) return { grade: 'B', color: '#fdcb6e' };
+  if (score >= 60) return { grade: 'C', color: '#e17055' };
+  if (score >= 50) return { grade: 'D', color: '#d63031' };
+  return { grade: 'F', color: '#636e72' };
+};
 
 const SimpleToolsPage: React.FC = () => {
   const [tools, setTools] = useState<any[]>([]);
@@ -8,16 +18,13 @@ const SimpleToolsPage: React.FC = () => {
   useEffect(() => {
     const fetchTools = async () => {
       try {
-        console.log('Fetching tools...');
-        const response = await fetch('http://localhost:8000/api/tools');
-        console.log('Response status:', response.status);
+        const response = await fetch(`${API_BASE}/api/tools`);
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
 
         const data = await response.json();
-        console.log('Tools received:', data.length);
         setTools(data);
       } catch (err) {
         console.error('Error:', err);
@@ -208,6 +215,23 @@ const SimpleToolsPage: React.FC = () => {
                     }}>
                       {tool.pricing_model}
                     </span>
+
+                    {tool.health_score > 0 && (() => {
+                      const h = getHealthGrade(tool.health_score);
+                      return (
+                        <span style={{
+                          background: 'rgba(255,255,255,0.25)',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '0.8rem',
+                          fontWeight: '600',
+                        }}
+                          title={`Health Score: ${tool.health_score}/100`}
+                        >
+                          <span style={{ color: h.color }}>&#9679;</span> {h.grade}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 

@@ -5,6 +5,7 @@ import { Search, Star, Users } from 'lucide-react';
 
 import { API_BASE } from '../config';
 import { Tool } from '../types';
+import ToolHealthBadge from './ToolHealthBadge';
 
 const fetchTools = async (): Promise<Tool[]> => {
   const response = await fetch(`${API_BASE}/api/tools`);
@@ -25,7 +26,10 @@ const DiscoverPage: React.FC = () => {
   const [selectedPricing, setSelectedPricing] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
 
-  const categories = ['all', 'Container', 'Infrastructure', 'CI/CD', 'Monitoring'];
+  const categories = useMemo(() => {
+    const cats = new Set(tools.map(t => t.category));
+    return ['all', ...Array.from(cats).sort()];
+  }, [tools]);
   const pricingModels = ['all', 'free', 'freemium', 'paid'];
 
   const filteredTools = useMemo(() => {
@@ -47,6 +51,8 @@ const DiscoverPage: React.FC = () => {
           return a.name.localeCompare(b.name);
         case 'category':
           return a.category.localeCompare(b.category);
+        case 'health':
+          return (b.health_score || 0) - (a.health_score || 0);
         default:
           return 0;
       }
@@ -166,6 +172,7 @@ const DiscoverPage: React.FC = () => {
                 className="w-full py-3 px-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
               >
                 <option value="popularity">Popularity (Stars)</option>
+                <option value="health">Health Score</option>
                 <option value="name">Name (A-Z)</option>
                 <option value="category">Category</option>
               </select>
@@ -215,6 +222,9 @@ const DiscoverPage: React.FC = () => {
                 <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium">
                   {tool.category}
                 </span>
+                {(tool.health_score ?? 0) > 0 && (
+                  <ToolHealthBadge score={tool.health_score} size="sm" />
+                )}
               </div>
 
               {/* AI Summary */}

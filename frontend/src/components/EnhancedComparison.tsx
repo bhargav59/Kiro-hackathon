@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Search, X, Zap, AlertCircle } from 'lucide-react';
+import { Search, X, Zap, AlertCircle, Download } from 'lucide-react';
 
 import { API_BASE } from '../config';
+import { trackEvent } from '../analytics';
+import PaywallModal from './PaywallModal';
 
 interface ComparisonResult {
   tool1: string;
@@ -47,6 +49,7 @@ const EnhancedComparison: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [error, setError] = useState('');
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const handleCompare = async () => {
     if (!tool1.trim() || !tool2.trim()) {
@@ -86,6 +89,37 @@ const EnhancedComparison: React.FC = () => {
     setTool1('');
     setTool2('');
     setError('');
+  };
+
+  const handleExport = async (format: 'markdown' | 'json') => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Please log in to export comparisons');
+      return;
+    }
+    trackEvent('export_attempted', { format, tool1, tool2 });
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/ai/compare/export?tool_ids=1,2&format=${format}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.status === 402) {
+        setShowPaywall(true);
+        return;
+      }
+      if (!res.ok) throw new Error('Export failed');
+
+      const text = await res.text();
+      const blob = new Blob([text], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tool1}-vs-${tool2}.${format === 'json' ? 'json' : 'md'}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Export failed. Please try again.');
+    }
   };
 
   return (
@@ -171,6 +205,24 @@ const EnhancedComparison: React.FC = () => {
                 <X size={24} className="mr-3" />
                 Clear
               </button>
+            )}
+            {comparison && (
+              <>
+                <button
+                  onClick={() => handleExport('markdown')}
+                  className="bg-green-600 text-white px-6 py-4 rounded-xl font-semibold hover:bg-green-700 flex items-center shadow-lg transition-all duration-200"
+                >
+                  <Download size={20} className="mr-2" />
+                  Export MD
+                </button>
+                <button
+                  onClick={() => handleExport('json')}
+                  className="bg-indigo-600 text-white px-6 py-4 rounded-xl font-semibold hover:bg-indigo-700 flex items-center shadow-lg transition-all duration-200"
+                >
+                  <Download size={20} className="mr-2" />
+                  Export JSON
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -468,6 +520,7 @@ const EnhancedComparison: React.FC = () => {
           </div>
         )}
       </div>
+      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} feature="export" />
     </div>
   );
 };

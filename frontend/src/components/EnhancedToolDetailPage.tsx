@@ -18,6 +18,7 @@ interface Tool {
   github_stars: number;
   github_forks: number;
   ai_summary: string;
+  health_score?: number;
   created_at: string;
 }
 
@@ -240,7 +241,7 @@ const EnhancedToolDetailPage: React.FC = () => {
                 </div>
 
                 {/* Quick Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                   <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 text-center hover:shadow-lg transition-all duration-200">
                     <Award className="text-blue-600 mx-auto mb-3" size={32} />
                     <div className="text-2xl font-bold text-blue-900">{tool.category}</div>
@@ -260,6 +261,11 @@ const EnhancedToolDetailPage: React.FC = () => {
                     <Users className="text-orange-600 mx-auto mb-3" size={32} />
                     <div className="text-2xl font-bold text-orange-900">{tool.github_forks.toLocaleString()}</div>
                     <div className="text-orange-700">Forks</div>
+                  </div>
+                  <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border-2 border-teal-200 rounded-xl p-6 text-center hover:shadow-lg transition-all duration-200">
+                    <Heart className="text-teal-600 mx-auto mb-3" size={32} />
+                    <div className="text-2xl font-bold text-teal-900">{tool.health_score || 'N/A'}{tool.health_score ? '/100' : ''}</div>
+                    <div className="text-teal-700">Health Score</div>
                   </div>
                 </div>
               </div>
