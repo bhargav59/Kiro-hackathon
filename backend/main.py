@@ -29,8 +29,17 @@ from auth_utils import get_secret_key, validate_password_strength, login_rate_li
 logger = logging.getLogger(__name__)
 
 # Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")  # Fallback to in-memory if no Supabase URL
-engine = create_engine(DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cloudengineered.db")
+
+# Configure engine with proper settings for SQLite vs PostgreSQL
+_engine_kwargs: dict = {"pool_pre_ping": True}
+if DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs["max_overflow"] = 20
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -52,6 +61,9 @@ class Tool(Base):
     github_forks = Column(Integer, default=0)
     last_commit_date = Column(DateTime)
     ai_summary = Column(Text)
+    health_score = Column(Integer, default=0)
+    health_data = Column(Text)  # JSON blob with score breakdown
+    last_health_check = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
     
@@ -69,6 +81,7 @@ class User(Base):
     avatar_url = Column(String)
     bio = Column(Text)
     is_admin = Column(Boolean, default=False)
+    subscription_plan = Column(String, default="free")  # free, pro, enterprise
     created_at = Column(DateTime, default=datetime.utcnow)
     
     reviews = relationship("Review", back_populates="user")
@@ -117,6 +130,41 @@ class Blog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+class UsageLog(Base):
+    __tablename__ = "usage_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String, index=True)  # "comparisons", "exports", "ai_searches"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class EmailSubscriber(Base):
+    __tablename__ = "email_subscribers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    name = Column(String, nullable=True)
+    source = Column(String)  # "homepage", "comparison", "blog", "register"
+    subscribed_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+class ComparisonPage(Base):
+    __tablename__ = "comparison_pages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tool_a_id = Column(Integer, ForeignKey("tools.id"))
+    tool_b_id = Column(Integer, ForeignKey("tools.id"))
+    slug = Column(String, unique=True, index=True)
+    title = Column(String)
+    content = Column(Text)
+    meta_description = Column(String)
+    views = Column(Integer, default=0)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    tool_a = relationship("Tool", foreign_keys=[tool_a_id])
+    tool_b = relationship("Tool", foreign_keys=[tool_b_id])
+
 # Pydantic models
 class ToolCreate(BaseModel):
     name: str
@@ -140,8 +188,9 @@ class ToolResponse(BaseModel):
     github_stars: int
     github_forks: int
     ai_summary: Optional[str]
+    health_score: Optional[int] = 0
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -1692,6 +1741,67 @@ async def enhance_single_tool(tool_id: int, current_user: User = Depends(get_adm
         logger.error(f"Enhancement failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Enhancement failed")
 
+@app.post("/api/admin/ingest-tools")
+async def trigger_tool_ingestion(current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Trigger ingestion of 100+ DevOps tools from GitHub API (admin only)"""
+    try:
+        from tool_ingestion import tool_ingestion_service
+        result = await tool_ingestion_service.ingest_all(db)
+        return {
+            "message": f"Ingested {result['count']} tools ({result['created']} new, {result['updated']} updated)",
+            "count": result["count"],
+            "created": result["created"],
+            "updated": result["updated"],
+            "errors": result["errors"][:10],  # Limit error list size
+        }
+    except Exception as e:
+        logger.error(f"Tool ingestion failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Tool ingestion failed")
+
+@app.get("/api/tools/{tool_id}/health")
+async def get_tool_health(tool_id: int, db: Session = Depends(get_db)):
+    """Get health score breakdown for a specific tool"""
+    tool = db.query(Tool).filter(Tool.id == tool_id).first()
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+
+    if tool.health_data:
+        try:
+            return json.loads(tool.health_data)
+        except json.JSONDecodeError:
+            pass
+
+    # Calculate on-the-fly if no cached data
+    if tool.github_url:
+        from health_scoring import health_scoring_service
+        result = await health_scoring_service.calculate_health_score(
+            tool.github_url, tool.github_stars or 0
+        )
+        # Cache the result
+        tool.health_score = result.get("score", 0)
+        tool.health_data = json.dumps(result)
+        tool.last_health_check = datetime.utcnow()
+        db.commit()
+        return result
+
+    return {"score": 0, "grade": "F", "breakdown": {}, "error": "No GitHub URL"}
+
+@app.post("/api/admin/recalculate-health")
+async def recalculate_health_scores(current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Recalculate health scores for all tools (admin only)"""
+    try:
+        from health_scoring import health_scoring_service
+        result = await health_scoring_service.score_all_tools(db)
+        return {
+            "message": f"Scored {result['scored']} tools",
+            "scored": result["scored"],
+            "errors": result["errors"][:10],
+            "tools": result["tools"],
+        }
+    except Exception as e:
+        logger.error(f"Health scoring failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Health scoring failed")
+
 # Blog endpoints
 @app.get("/api/blogs")
 async def get_blogs(db: Session = Depends(get_db)):
@@ -1707,6 +1817,256 @@ async def create_blog(blog_data: BlogCreate, current_user: User = Depends(get_cu
     db.commit()
     db.refresh(blog)
     return blog
+
+# ===== USAGE TRACKING ENDPOINTS =====
+
+@app.get("/api/usage/me")
+async def get_my_usage(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get current user's usage summary for today"""
+    from usage_tracking import get_usage_summary
+    return get_usage_summary(db, current_user)
+
+@app.get("/api/ai/compare/export")
+async def export_comparison(
+    tool_ids: str,
+    format: str = "markdown",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Export a comparison report (pro/enterprise only)"""
+    from usage_tracking import check_and_increment_usage
+    usage = check_and_increment_usage(db, current_user, "exports")
+    if not usage["allowed"]:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "message": "Export requires a Pro or Enterprise plan",
+                "upgrade_url": "/pricing",
+                "plan": usage["plan"],
+            },
+        )
+
+    ids = [int(x.strip()) for x in tool_ids.split(",") if x.strip().isdigit()]
+    tools = db.query(Tool).filter(Tool.id.in_(ids)).all()
+    if len(tools) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 tools required")
+
+    if format == "json":
+        return {
+            "tools": [
+                {
+                    "name": t.name,
+                    "category": t.category,
+                    "stars": t.github_stars,
+                    "license": t.license,
+                    "pricing": t.pricing_model,
+                    "health_score": t.health_score,
+                    "description": t.description,
+                }
+                for t in tools
+            ],
+            "exported_at": datetime.utcnow().isoformat(),
+        }
+
+    # Default: markdown
+    lines = [f"# Tool Comparison Report\n", f"*Generated {datetime.utcnow().strftime('%Y-%m-%d')}*\n"]
+    for t in tools:
+        lines.append(f"## {t.name}")
+        lines.append(f"- **Category**: {t.category}")
+        lines.append(f"- **Stars**: {t.github_stars:,}")
+        lines.append(f"- **License**: {t.license or 'N/A'}")
+        lines.append(f"- **Pricing**: {t.pricing_model}")
+        lines.append(f"- **Health Score**: {t.health_score or 'N/A'}/100")
+        lines.append(f"- **Description**: {t.description[:300]}")
+        lines.append("")
+    return Response(content="\n".join(lines), media_type="text/markdown")
+
+# ===== NEWSLETTER / EMAIL ENDPOINTS =====
+
+@app.post("/api/newsletter/subscribe")
+async def subscribe_newsletter(data: dict, db: Session = Depends(get_db)):
+    """Subscribe to newsletter (public endpoint)"""
+    email = data.get("email", "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+
+    existing = db.query(EmailSubscriber).filter(EmailSubscriber.email == email).first()
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            db.commit()
+        return {"message": "Already subscribed", "status": "ok"}
+
+    subscriber = EmailSubscriber(
+        email=email,
+        name=data.get("name", ""),
+        source=data.get("source", "homepage"),
+    )
+    db.add(subscriber)
+    db.commit()
+    return {"message": "Subscribed successfully", "status": "ok"}
+
+@app.get("/api/admin/subscribers")
+async def list_subscribers(current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """List all email subscribers (admin only)"""
+    subs = db.query(EmailSubscriber).filter(EmailSubscriber.is_active == True).order_by(EmailSubscriber.subscribed_at.desc()).all()
+    return [{"id": s.id, "email": s.email, "name": s.name, "source": s.source, "subscribed_at": s.subscribed_at.isoformat()} for s in subs]
+
+@app.get("/api/admin/subscribers/export")
+async def export_subscribers(current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Export subscribers as CSV (admin only)"""
+    subs = db.query(EmailSubscriber).filter(EmailSubscriber.is_active == True).all()
+    lines = ["email,name,source,subscribed_at"]
+    for s in subs:
+        lines.append(f"{s.email},{s.name or ''},{s.source or ''},{s.subscribed_at.isoformat()}")
+    return Response(content="\n".join(lines), media_type="text/csv")
+
+# ===== SEO COMPARISON PAGES =====
+
+@app.get("/api/comparisons")
+async def list_comparisons(db: Session = Depends(get_db)):
+    """List all SEO comparison pages"""
+    pages = db.query(ComparisonPage).order_by(ComparisonPage.views.desc()).all()
+    return [
+        {
+            "id": p.id,
+            "slug": p.slug,
+            "title": p.title,
+            "meta_description": p.meta_description,
+            "views": p.views,
+            "tool_a": p.tool_a.name if p.tool_a else None,
+            "tool_b": p.tool_b.name if p.tool_b else None,
+        }
+        for p in pages
+    ]
+
+@app.get("/api/comparisons/{slug}")
+async def get_comparison_page(slug: str, db: Session = Depends(get_db)):
+    """Get a specific SEO comparison page and increment views"""
+    page = db.query(ComparisonPage).filter(ComparisonPage.slug == slug).first()
+    if not page:
+        raise HTTPException(status_code=404, detail="Comparison page not found")
+    page.views = (page.views or 0) + 1
+    db.commit()
+    return {
+        "id": page.id,
+        "slug": page.slug,
+        "title": page.title,
+        "content": page.content,
+        "meta_description": page.meta_description,
+        "views": page.views,
+        "tool_a": {"id": page.tool_a.id, "name": page.tool_a.name, "slug": page.tool_a.slug} if page.tool_a else None,
+        "tool_b": {"id": page.tool_b.id, "name": page.tool_b.name, "slug": page.tool_b.slug} if page.tool_b else None,
+        "generated_at": page.generated_at.isoformat() if page.generated_at else None,
+    }
+
+@app.post("/api/admin/generate-comparisons")
+async def generate_comparison_pages(current_user: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Auto-generate top SEO comparison pages (admin only)"""
+    TOP_PAIRS = [
+        ("Docker", "Podman"), ("Docker", "Kubernetes"), ("Kubernetes", "Nomad"),
+        ("Terraform", "Pulumi"), ("Terraform", "Ansible"), ("Terraform", "OpenTofu"),
+        ("Jenkins", "GitHub Actions"), ("Jenkins", "GitLab CI/CD"), ("GitHub Actions", "GitLab CI/CD"),
+        ("ArgoCD", "Flux"), ("ArgoCD", "Spinnaker"), ("Tekton", "GitHub Actions"),
+        ("Prometheus", "Grafana"), ("Prometheus", "VictoriaMetrics"), ("Prometheus", "Zabbix"),
+        ("Grafana", "Kibana"), ("Loki", "Elasticsearch"), ("Fluentd", "Fluent Bit"),
+        ("Istio", "Linkerd"), ("Traefik", "NGINX"), ("Envoy Proxy", "NGINX"),
+        ("Ansible", "Chef"), ("Ansible", "Puppet"), ("Ansible", "SaltStack"),
+        ("Vault", "cert-manager"), ("Trivy", "Grype"), ("Falco", "Open Policy Agent"),
+        ("Helm", "Kustomize"), ("k3s", "MicroK8s"), ("k3s", "Minikube"),
+        ("Redis", "etcd"), ("PostgreSQL", "MySQL"), ("PostgreSQL", "CockroachDB"),
+        ("MinIO", "Longhorn"), ("Kong", "Traefik"), ("Kong", "APISIX"),
+        ("k6", "Locust"), ("k6", "JMeter"), ("Litmus Chaos", "Chaos Mesh"),
+        ("Docker Compose", "Kubernetes"), ("Rancher", "Kubernetes"),
+        ("OpenFaaS", "Knative"), ("Caddy", "NGINX"), ("HAProxy", "NGINX"),
+        ("Consul", "Istio"), ("Cilium", "Istio"), ("CoreDNS", "Consul"),
+        ("Apache Kafka", "RabbitMQ"), ("Apache Kafka", "NATS"), ("RabbitMQ", "NATS"),
+        ("Velero", "Longhorn"), ("Crossplane", "Terraform"),
+    ]
+
+    created = 0
+    skipped = 0
+    errors = []
+
+    for name_a, name_b in TOP_PAIRS:
+        tool_a = db.query(Tool).filter(Tool.name == name_a).first()
+        tool_b = db.query(Tool).filter(Tool.name == name_b).first()
+
+        if not tool_a or not tool_b:
+            skipped += 1
+            continue
+
+        slug = f"{tool_a.slug}-vs-{tool_b.slug}"
+        existing = db.query(ComparisonPage).filter(ComparisonPage.slug == slug).first()
+        if existing:
+            skipped += 1
+            continue
+
+        try:
+            title = f"{tool_a.name} vs {tool_b.name} (2025): Complete Comparison"
+            meta = f"Compare {tool_a.name} and {tool_b.name} - features, performance, pricing, and use cases. Find the best {tool_a.category.lower()} tool for your needs."
+
+            content = _generate_comparison_content(tool_a, tool_b)
+
+            page = ComparisonPage(
+                tool_a_id=tool_a.id,
+                tool_b_id=tool_b.id,
+                slug=slug,
+                title=title,
+                content=content,
+                meta_description=meta,
+            )
+            db.add(page)
+            created += 1
+        except Exception as e:
+            errors.append(f"{name_a} vs {name_b}: {str(e)}")
+
+    db.commit()
+    return {"created": created, "skipped": skipped, "errors": errors[:10]}
+
+
+def _generate_comparison_content(tool_a, tool_b) -> str:
+    """Generate structured comparison content for two tools."""
+    return f"""## Overview
+
+**{tool_a.name}** and **{tool_b.name}** are both popular tools in the {tool_a.category} / {tool_b.category} space. This comparison helps you choose the right tool for your DevOps workflow.
+
+### {tool_a.name}
+{tool_a.description or 'A widely-used DevOps tool.'}
+
+### {tool_b.name}
+{tool_b.description or 'A widely-used DevOps tool.'}
+
+## Quick Comparison
+
+| Feature | {tool_a.name} | {tool_b.name} |
+|---------|{'---' * 5}|{'---' * 5}|
+| **GitHub Stars** | {tool_a.github_stars:,} | {tool_b.github_stars:,} |
+| **License** | {tool_a.license or 'N/A'} | {tool_b.license or 'N/A'} |
+| **Pricing** | {tool_a.pricing_model} | {tool_b.pricing_model} |
+| **Category** | {tool_a.category} | {tool_b.category} |
+| **Health Score** | {tool_a.health_score or 'N/A'}/100 | {tool_b.health_score or 'N/A'}/100 |
+
+## Community & Adoption
+
+{tool_a.name} has **{tool_a.github_stars:,}** GitHub stars and **{tool_a.github_forks:,}** forks, while {tool_b.name} has **{tool_b.github_stars:,}** stars and **{tool_b.github_forks:,}** forks.
+
+## Use Cases
+
+**Choose {tool_a.name} if:**
+- You need a mature, well-established solution
+- Your team is already familiar with {tool_a.name}'s ecosystem
+- You prioritize {tool_a.category.lower()} features
+
+**Choose {tool_b.name} if:**
+- You want a {'lightweight' if tool_b.github_stars < tool_a.github_stars else 'feature-rich'} alternative
+- You're starting a new project with flexibility
+- You prioritize {tool_b.category.lower()} capabilities
+
+## Verdict
+
+Both {tool_a.name} and {tool_b.name} are excellent choices. {tool_a.name} {'has a larger community' if tool_a.github_stars > tool_b.github_stars else 'is gaining traction'}, while {tool_b.name} {'offers a strong alternative' if tool_b.github_stars < tool_a.github_stars else 'leads in popularity'}. Your choice should depend on your specific requirements, team expertise, and infrastructure needs.
+"""
 
 if __name__ == "__main__":
     import uvicorn

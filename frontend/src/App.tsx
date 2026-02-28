@@ -17,6 +17,12 @@ import ProfilePage from './components/ProfilePage';
 import PricingPage from './components/PricingPage';
 import SubscriptionManager from './components/SubscriptionManager';
 import CheckoutSuccess from './components/CheckoutSuccess';
+import EmailCaptureModal from './components/EmailCaptureModal';
+import OnboardingFlow from './components/OnboardingFlow';
+import SEOComparisonPage from './components/SEOComparisonPage';
+
+// Analytics
+import { initAnalytics, identifyUser, resetUser, trackEvent } from './analytics';
 
 // API Base URL
 import { API_BASE } from './config';
@@ -45,6 +51,10 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
   useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
     if (token) {
       fetchUser();
     }
@@ -58,6 +68,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+        identifyUser(String(userData.id), { email: userData.email, username: userData.username });
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -75,6 +86,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       const data = await response.json();
       localStorage.setItem('token', data.access_token);
       setToken(data.access_token);
+      trackEvent('login_completed', { method: 'email' });
     } else {
       throw new Error('Login failed');
     }
@@ -90,12 +102,14 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     if (!response.ok) {
       throw new Error('Registration failed');
     }
+    trackEvent('signup_completed', { method: 'email' });
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
+    resetUser();
   };
 
   return (
@@ -251,18 +265,19 @@ const HomePage: React.FC = () => {
 // Main App Component
 
 // Main App
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { token } = React.useContext(AuthContext);
   return (
-    <AuthProvider>
-      <Router>
-        <div className="min-h-screen bg-gray-50">
-          <Header />
-          <Routes>
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/tools" element={<SimpleToolsPage />} />
             <Route path="/tools/:slug" element={<EnhancedToolDetailPage />} />
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/compare" element={<EnhancedComparison />} />
+            <Route path="/compare/:slug" element={<SEOComparisonPage />} />
             <Route path="/ai-search" element={<NaturalLanguageQuery />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/blog/:id" element={<BlogDetailPage />} />
@@ -278,8 +293,17 @@ const App: React.FC = () => {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/blogs" element={<AdminPage />} />
           </Routes>
+          <EmailCaptureModal />
+          <OnboardingFlow token={token} />
         </div>
       </Router>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
     </AuthProvider>
   );
 };

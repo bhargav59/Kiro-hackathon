@@ -16,3 +16,4 @@ httpx>=0.25.0
 beautifulsoup4>=4.12.0
 authlib>=1.0.0
 itsdangerous>=2.0.0
+psycopg2-binary>=2.9.9
