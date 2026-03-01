@@ -1595,6 +1595,18 @@ async def get_analytics_overview(db: Session = Depends(get_db)):
             {"month": "May", "tools": 10, "stars": total_stars}
         ]
         
+        # Build insights safely (avoid max() on empty sequences)
+        insights = []
+        if category_stats:
+            top_cat = max(category_stats, key=lambda x: x[1])
+            insights.append(f"Most popular category: {top_cat[0]} ({top_cat[1]} tools)")
+        insights.append(f"Average GitHub stars per tool: {int(avg_stars):,}")
+        licenses_with_name = [l for l in license_stats if l[0]]
+        if licenses_with_name:
+            top_license = max(licenses_with_name, key=lambda x: x[1])
+            insights.append(f"Most common license: {top_license[0]}")
+        insights.append(f"Total community engagement: {int(total_stars + total_forks):,} stars + forks")
+
         return {
             "overview": {
                 "total_tools": total_tools,
@@ -1602,20 +1614,20 @@ async def get_analytics_overview(db: Session = Depends(get_db)):
                 "total_forks": int(total_forks),
                 "avg_stars": int(avg_stars),
                 "categories": len(category_stats),
-                "licenses": len([l for l in license_stats if l[0]])
+                "licenses": len(licenses_with_name)
             },
             "category_distribution": [
-                {"name": cat, "count": count, "percentage": round((count/total_tools)*100, 1)}
+                {"name": cat, "count": count, "percentage": round((count / total_tools) * 100, 1) if total_tools else 0}
                 for cat, count in category_stats
             ],
             "pricing_distribution": [
-                {"name": pricing.title(), "count": count, "percentage": round((count/total_tools)*100, 1)}
+                {"name": pricing.title() if pricing else "Unknown", "count": count, "percentage": round((count / total_tools) * 100, 1) if total_tools else 0}
                 for pricing, count in pricing_stats
             ],
             "license_distribution": [
-                {"name": license or "Unknown", "count": count, "percentage": round((count/total_tools)*100, 1)}
-                for license, count in license_stats if count > 0
-            ][:10],  # Top 10 licenses
+                {"name": lic or "Unknown", "count": count, "percentage": round((count / total_tools) * 100, 1) if total_tools else 0}
+                for lic, count in license_stats if count > 0
+            ][:10],
             "top_tools": [
                 {
                     "name": tool.name,
@@ -1628,12 +1640,7 @@ async def get_analytics_overview(db: Session = Depends(get_db)):
                 for tool in top_tools
             ],
             "growth_trends": growth_data,
-            "insights": [
-                f"Most popular category: {max(category_stats, key=lambda x: x[1])[0]} ({max(category_stats, key=lambda x: x[1])[1]} tools)",
-                f"Average GitHub stars per tool: {int(avg_stars):,}",
-                f"Most common license: {max([l for l in license_stats if l[0]], key=lambda x: x[1])[0]}",
-                f"Total community engagement: {int(total_stars + total_forks):,} stars + forks"
-            ]
+            "insights": insights
         }
     except Exception as e:
         logger.error(f"Analytics error: {e}", exc_info=True)

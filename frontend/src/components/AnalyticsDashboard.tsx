@@ -72,7 +72,7 @@ const AnalyticsDashboard: React.FC = () => {
         <div className="text-center">
           <div className="text-6xl mb-4">📊</div>
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Analytics Unavailable</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <p className="text-gray-600 mb-4">{error || 'No data available'}</p>
           <button
             onClick={fetchAnalytics}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
@@ -83,6 +83,12 @@ const AnalyticsDashboard: React.FC = () => {
       </div>
     );
   }
+
+  const overview = data.overview || { total_tools: 0, total_stars: 0, total_forks: 0, avg_stars: 0, categories: 0, licenses: 0 };
+  const categoryDistribution = data.category_distribution || [];
+  const pricingDistribution = data.pricing_distribution || [];
+  const topTools = data.top_tools || [];
+  const insights = data.insights || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -103,7 +109,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Tools</p>
-                <p className="text-3xl font-bold text-blue-600">{data.overview.total_tools}</p>
+                <p className="text-3xl font-bold text-blue-600">{overview.total_tools}</p>
               </div>
               <Award className="text-blue-500" size={32} />
             </div>
@@ -113,7 +119,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Stars</p>
-                <p className="text-3xl font-bold text-yellow-600">{data.overview.total_stars.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-yellow-600">{overview.total_stars.toLocaleString()}</p>
               </div>
               <Star className="text-yellow-500" size={32} />
             </div>
@@ -123,7 +129,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Forks</p>
-                <p className="text-3xl font-bold text-green-600">{data.overview.total_forks.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-green-600">{overview.total_forks.toLocaleString()}</p>
               </div>
               <GitFork className="text-green-500" size={32} />
             </div>
@@ -133,7 +139,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Avg Stars</p>
-                <p className="text-3xl font-bold text-purple-600">{data.overview.avg_stars.toLocaleString()}</p>
+                <p className="text-3xl font-bold text-purple-600">{overview.avg_stars.toLocaleString()}</p>
               </div>
               <TrendingUp className="text-purple-500" size={32} />
             </div>
@@ -143,7 +149,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Categories</p>
-                <p className="text-3xl font-bold text-indigo-600">{data.overview.categories}</p>
+                <p className="text-3xl font-bold text-indigo-600">{overview.categories}</p>
               </div>
               <Activity className="text-indigo-500" size={32} />
             </div>
@@ -153,7 +159,7 @@ const AnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Licenses</p>
-                <p className="text-3xl font-bold text-pink-600">{data.overview.licenses}</p>
+                <p className="text-3xl font-bold text-pink-600">{overview.licenses}</p>
               </div>
               <Users className="text-pink-500" size={32} />
             </div>
@@ -168,7 +174,7 @@ const AnalyticsDashboard: React.FC = () => {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={data.category_distribution}
+                  data={categoryDistribution}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -177,7 +183,7 @@ const AnalyticsDashboard: React.FC = () => {
                   fill="#8884d8"
                   dataKey="count"
                 >
-                  {data.category_distribution.map((_entry, index) => (
+                  {categoryDistribution.map((_entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -190,7 +196,7 @@ const AnalyticsDashboard: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
             <h3 className="text-2xl font-bold text-gray-900 mb-6">💰 Pricing Models</h3>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.pricing_distribution}>
+              <BarChart data={pricingDistribution}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -218,7 +224,7 @@ const AnalyticsDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {data.top_tools.map((tool, index) => (
+                {topTools.map((tool, index) => (
                   <tr key={tool.name} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4">
                       <span className="font-bold text-blue-600">#{index + 1}</span>
@@ -256,7 +262,7 @@ const AnalyticsDashboard: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <h3 className="text-2xl font-bold text-gray-900 mb-6">💡 Key Insights</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {data.insights.map((insight, index) => (
+            {insights.map((insight, index) => (
               <div key={index} className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
                 <p className="text-blue-900 font-medium">{insight}</p>
               </div>
